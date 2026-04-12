@@ -1,20 +1,17 @@
 import {
   DEFAULT_WORKSPACE_START_URL,
-  DEFAULT_DOCK_WIDTH,
   DEFAULT_WORKSPACE_TITLE,
   LAST_SESSION_KEY,
 } from './constants';
 import type {
-  DockState,
-  DockWindowSession,
-  StoredWorkspaceSnapshot,
-  UserPreferences,
+  SidePanelSession,
+  StoredSessionSnapshot,
   WorkspaceTab,
 } from './schema';
 import { getDisplayTitle } from './url';
 
 function createWorkspaceTabId(): string {
-  return `workspace-${crypto.randomUUID()}`;
+  return `ws-${crypto.randomUUID()}`;
 }
 
 function now(): number {
@@ -28,221 +25,112 @@ export function createWorkspaceTab(
   return {
     id: overrides.id ?? createWorkspaceTabId(),
     url,
-    title:
-      overrides.title ??
-      getDisplayTitle(url) ??
-      DEFAULT_WORKSPACE_TITLE,
+    title: overrides.title ?? getDisplayTitle(url) ?? DEFAULT_WORKSPACE_TITLE,
     faviconUrl: overrides.faviconUrl ?? null,
-    mode: overrides.mode ?? 'embedded',
-    loadingState: overrides.loadingState ?? 'loading',
-    lastActiveAt: overrides.lastActiveAt ?? now(),
     nativeTabId: overrides.nativeTabId ?? null,
-    blockedReason: overrides.blockedReason ?? null,
-    embedConfidence: overrides.embedConfidence ?? 'unknown',
+    lastActiveAt: overrides.lastActiveAt ?? now(),
   };
 }
 
-export function deriveDockState(
-  pinned: boolean,
-  collapsed: boolean,
-): DockState {
-  if (pinned) {
-    return 'pinned';
-  }
-
-  return collapsed ? 'collapsed' : 'hover-expanded';
-}
-
-export function createWindowSession(
+export function createSession(
   windowId: number,
-  browserTabId: number,
-  preferences: UserPreferences,
-  snapshot?: StoredWorkspaceSnapshot | null,
-  seedUrl?: string,
-): DockWindowSession {
-  const seededTabs =
-    snapshot?.workspaceTabs.length && snapshot.workspaceTabs.length > 0
+  snapshot?: StoredSessionSnapshot | null,
+): SidePanelSession {
+  const tabs =
+    snapshot && snapshot.workspaceTabs.length > 0
       ? snapshot.workspaceTabs
-      : [createWorkspaceTab(seedUrl ?? 'https://www.google.com')];
-  const activeWorkspaceTabId =
-    snapshot?.activeWorkspaceTabId ?? seededTabs.at(0)?.id ?? createWorkspaceTabId();
-  const activeWorkspaceTab =
-    seededTabs.find((tab) => tab.id === activeWorkspaceTabId) ?? seededTabs[0];
-  const pinned = snapshot?.pinned ?? preferences.defaultPinned;
-  const collapsed = pinned ? false : true;
+      : [createWorkspaceTab(DEFAULT_WORKSPACE_START_URL)];
+  const activeTabId = snapshot?.activeTabId ?? tabs[0].id;
 
   return {
     windowId,
-    currentBrowserTabId: browserTabId,
-    activeWorkspaceTabId: activeWorkspaceTab.id,
-    workspaceTabs: seededTabs,
-    state: deriveDockState(pinned, collapsed),
-    pinned,
-    collapsed,
-    dockWidth: snapshot?.dockWidth ?? preferences.dockWidth ?? DEFAULT_DOCK_WIDTH,
-    hostAccessGranted: false,
+    activeTabId,
+    workspaceTabs: tabs,
     lastError: null,
     updatedAt: now(),
   };
 }
 
-type SessionTransform = (session: DockWindowSession) => DockWindowSession;
-
-function withSessionUpdate(
-  session: DockWindowSession,
-  transform: SessionTransform,
-): DockWindowSession {
-  const nextSession = transform(session);
-  const activeTab =
-    nextSession.workspaceTabs.find(
-      (workspaceTab) => workspaceTab.id === nextSession.activeWorkspaceTabId,
-    ) ?? nextSession.workspaceTabs[0];
-
+export function activateTab(
+  session: SidePanelSession,
+  workspaceTabId: string,
+): SidePanelSession {
   return {
-    ...nextSession,
-    activeWorkspaceTabId: activeTab.id,
-    state: deriveDockState(
-      nextSession.pinned,
-      nextSession.collapsed,
+    ...session,
+    activeTabId: workspaceTabId,
+    workspaceTabs: session.workspaceTabs.map((t) =>
+      t.id === workspaceTabId ? { ...t, lastActiveAt: now() } : t,
     ),
     updatedAt: now(),
   };
 }
 
-export function setPinnedState(
-  session: DockWindowSession,
-  pinned: boolean,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    pinned,
-    collapsed: pinned ? false : true,
-  }));
+export function addTab(
+  session: SidePanelSession,
+  tab: WorkspaceTab,
+): SidePanelSession {
+  return {
+    ...session,
+    activeTabId: tab.id,
+    workspaceTabs: [tab, ...session.workspaceTabs],
+    updatedAt: now(),
+  };
 }
 
-export function setCollapsedState(
-  session: DockWindowSession,
-  collapsed: boolean,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    collapsed: currentSession.pinned ? false : collapsed,
-  }));
-}
-
-export function activateWorkspaceTab(
-  session: DockWindowSession,
+export function removeTab(
+  session: SidePanelSession,
   workspaceTabId: string,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    workspaceTabs: currentSession.workspaceTabs.map((workspaceTab) =>
-      workspaceTab.id === workspaceTabId
-        ? {
-            ...workspaceTab,
-            lastActiveAt: now(),
-          }
-        : workspaceTab,
-    ),
-    activeWorkspaceTabId: workspaceTabId,
-    collapsed: currentSession.pinned ? false : false,
-  }));
-}
+): SidePanelSession {
+  const nextTabs = session.workspaceTabs.filter((t) => t.id !== workspaceTabId);
+  const nextActiveId =
+    session.activeTabId === workspaceTabId
+      ? nextTabs[0]?.id ?? createWorkspaceTab(DEFAULT_WORKSPACE_START_URL).id
+      : session.activeTabId;
 
-export function createWorkspaceTabInSession(
-  session: DockWindowSession,
-  workspaceTab: WorkspaceTab,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    workspaceTabs: [workspaceTab, ...currentSession.workspaceTabs],
-    activeWorkspaceTabId: workspaceTab.id,
-    collapsed: currentSession.pinned ? false : false,
-  }));
-}
-
-export function closeWorkspaceTabInSession(
-  session: DockWindowSession,
-  workspaceTabId: string,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => {
-    const nextTabs = currentSession.workspaceTabs.filter(
-      (workspaceTab) => workspaceTab.id !== workspaceTabId,
-    );
-
-    const nextActiveId =
-      currentSession.activeWorkspaceTabId === workspaceTabId
-        ? nextTabs[0]?.id ?? currentSession.activeWorkspaceTabId
-        : currentSession.activeWorkspaceTabId;
-
+  if (nextTabs.length === 0) {
+    const fallback = createWorkspaceTab(DEFAULT_WORKSPACE_START_URL);
     return {
-      ...currentSession,
-      workspaceTabs:
-        nextTabs.length > 0
-          ? nextTabs
-          : [createWorkspaceTab(DEFAULT_WORKSPACE_START_URL)],
-      activeWorkspaceTabId: nextActiveId,
+      ...session,
+      activeTabId: fallback.id,
+      workspaceTabs: [fallback],
+      updatedAt: now(),
     };
-  });
+  }
+
+  return {
+    ...session,
+    activeTabId: nextActiveId,
+    workspaceTabs: nextTabs,
+    updatedAt: now(),
+  };
 }
 
-export function updateWorkspaceTab(
-  session: DockWindowSession,
+export function updateTab(
+  session: SidePanelSession,
   workspaceTabId: string,
   update: Partial<WorkspaceTab>,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    workspaceTabs: currentSession.workspaceTabs.map((workspaceTab) =>
-      workspaceTab.id === workspaceTabId
-        ? {
-            ...workspaceTab,
-            ...update,
-          }
-        : workspaceTab,
+): SidePanelSession {
+  return {
+    ...session,
+    workspaceTabs: session.workspaceTabs.map((t) =>
+      t.id === workspaceTabId ? { ...t, ...update } : t,
     ),
-  }));
+    updatedAt: now(),
+  };
 }
 
-export function setSessionError(
-  session: DockWindowSession,
+export function setError(
+  session: SidePanelSession,
   error: string | null,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    lastError: error,
-  }));
+): SidePanelSession {
+  return { ...session, lastError: error, updatedAt: now() };
 }
 
-export function setHostAccessGranted(
-  session: DockWindowSession,
-  granted: boolean,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    hostAccessGranted: granted,
-  }));
-}
-
-export function setCurrentBrowserTab(
-  session: DockWindowSession,
-  browserTabId: number | null,
-): DockWindowSession {
-  return withSessionUpdate(session, (currentSession) => ({
-    ...currentSession,
-    currentBrowserTabId: browserTabId,
-  }));
-}
-
-export function toStoredWorkspaceSnapshot(
-  session: DockWindowSession,
-): Record<typeof LAST_SESSION_KEY, StoredWorkspaceSnapshot> {
+export function toSnapshot(session: SidePanelSession): Record<string, StoredSessionSnapshot> {
   return {
     [LAST_SESSION_KEY]: {
-      activeWorkspaceTabId: session.activeWorkspaceTabId,
+      activeTabId: session.activeTabId,
       workspaceTabs: session.workspaceTabs,
-      dockWidth: session.dockWidth,
-      pinned: session.pinned,
       updatedAt: now(),
     },
   };

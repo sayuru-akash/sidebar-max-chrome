@@ -2,9 +2,9 @@
 
 import { defineBackground } from '#imports';
 
-import { DockBackgroundController } from '../src/background/controller';
+import { SidePanelController } from '../src/background/controller';
 
 export default defineBackground(() => {
-  const controller = new DockBackgroundController();
+  const controller = new SidePanelController();
   void controller.start();
 });

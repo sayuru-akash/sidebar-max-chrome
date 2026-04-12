@@ -1,189 +1,110 @@
 import { z } from 'zod';
 
-export const WorkspaceTabModeSchema = z.enum(['embedded', 'nativeFallback']);
-export const WorkspaceTabLoadingStateSchema = z.enum([
-  'idle',
-  'loading',
-  'ready',
-  'blocked',
-  'error',
-]);
-export const DockStateSchema = z.enum([
-  'closed',
-  'pinned',
-  'collapsed',
-  'hover-expanded',
-  'native-fallback',
-]);
-export const EmbedProbeReasonSchema = z.enum([
-  'x-frame-options',
-  'content-security-policy',
-  'unsupported-protocol',
-  'probe-failed',
-]);
-export const EmbedProbeConfidenceSchema = z.enum(['high', 'low', 'unknown']);
-
 export const WorkspaceTabSchema = z.object({
   id: z.string().min(1),
   url: z.string().min(1),
   title: z.string().min(1),
-  faviconUrl: z.string().nullable().optional(),
-  mode: WorkspaceTabModeSchema,
-  loadingState: WorkspaceTabLoadingStateSchema,
+  faviconUrl: z.string().nullable(),
+  nativeTabId: z.number().int().nullable(),
   lastActiveAt: z.number().int().nonnegative(),
-  nativeTabId: z.number().int().nullable().optional(),
-  blockedReason: z.string().nullable().optional(),
-  embedConfidence: EmbedProbeConfidenceSchema.default('unknown'),
 });
 
-export const UserPreferencesSchema = z.object({
-  defaultPinned: z.boolean(),
-  dockWidth: z.number().int().min(340).max(560),
-  reducedMotion: z.boolean(),
-});
-
-export const DockWindowSessionSchema = z.object({
+export const SidePanelSessionSchema = z.object({
   windowId: z.number().int().nonnegative(),
-  state: DockStateSchema,
-  pinned: z.boolean(),
-  collapsed: z.boolean(),
-  activeWorkspaceTabId: z.string().min(1),
-  workspaceTabs: z.array(WorkspaceTabSchema).min(1),
-  currentBrowserTabId: z.number().int().nonnegative().nullable().optional(),
-  dockWidth: z.number().int().min(340).max(560),
-  hostAccessGranted: z.boolean(),
-  lastError: z.string().nullable().optional(),
+  activeTabId: z.string().min(1),
+  workspaceTabs: z.array(WorkspaceTabSchema).min(0),
+  lastError: z.string().nullable(),
   updatedAt: z.number().int().nonnegative(),
 });
 
-export const StoredWorkspaceSnapshotSchema = z.object({
-  activeWorkspaceTabId: z.string().min(1),
-  workspaceTabs: z.array(WorkspaceTabSchema).min(1),
-  dockWidth: z.number().int().min(340).max(560),
-  pinned: z.boolean(),
+export const StoredSessionSnapshotSchema = z.object({
+  activeTabId: z.string().min(1),
+  workspaceTabs: z.array(WorkspaceTabSchema).min(0),
   updatedAt: z.number().int().nonnegative(),
 });
 
-export const EmbedProbeResultSchema = z.object({
-  allowed: z.boolean(),
-  confidence: EmbedProbeConfidenceSchema,
-  reason: EmbedProbeReasonSchema.optional(),
-  details: z.string().optional(),
-});
-
-export const OpenDockMessageSchema = z.object({
-  type: z.literal('OPEN_DOCK'),
-  windowId: z.number().int().nonnegative(),
-  tabId: z.number().int().nonnegative(),
-});
-
-export const CloseDockMessageSchema = z.object({
-  type: z.literal('CLOSE_DOCK'),
-  windowId: z.number().int().nonnegative(),
-});
-
-export const SetPinnedMessageSchema = z.object({
-  type: z.literal('SET_PINNED'),
-  windowId: z.number().int().nonnegative(),
-  pinned: z.boolean(),
-});
-
-export const SetCollapsedMessageSchema = z.object({
-  type: z.literal('SET_COLLAPSED'),
-  windowId: z.number().int().nonnegative(),
-  collapsed: z.boolean(),
-});
-
-export const NavigateWorkspaceTabMessageSchema = z.object({
-  type: z.literal('NAVIGATE_WORKSPACE_TAB'),
+export const NavigateTabMessageSchema = z.object({
+  type: z.literal('NAVIGATE_TAB'),
   windowId: z.number().int().nonnegative(),
   workspaceTabId: z.string().min(1),
   input: z.string().min(1),
 });
 
-export const CreateWorkspaceTabMessageSchema = z.object({
-  type: z.literal('CREATE_WORKSPACE_TAB'),
+export const CreateTabMessageSchema = z.object({
+  type: z.literal('CREATE_TAB'),
   windowId: z.number().int().nonnegative(),
-  input: z.string().min(1).optional(),
+  input: z.string().optional(),
 });
 
-export const CloseWorkspaceTabMessageSchema = z.object({
-  type: z.literal('CLOSE_WORKSPACE_TAB'),
-  windowId: z.number().int().nonnegative(),
-  workspaceTabId: z.string().min(1),
-});
-
-export const ActivateWorkspaceTabMessageSchema = z.object({
-  type: z.literal('ACTIVATE_WORKSPACE_TAB'),
+export const CloseTabMessageSchema = z.object({
+  type: z.literal('CLOSE_TAB'),
   windowId: z.number().int().nonnegative(),
   workspaceTabId: z.string().min(1),
 });
 
-export const SyncFallbackTabMessageSchema = z.object({
-  type: z.literal('SYNC_FALLBACK_TAB'),
+export const ActivateTabMessageSchema = z.object({
+  type: z.literal('ACTIVATE_TAB'),
   windowId: z.number().int().nonnegative(),
   workspaceTabId: z.string().min(1),
-  browserTabId: z.number().int().nonnegative().nullable().optional(),
 });
 
-export const RequestHostAccessMessageSchema = z.object({
-  type: z.literal('REQUEST_HOST_ACCESS'),
+export const GoBackMessageSchema = z.object({
+  type: z.literal('GO_BACK'),
+  windowId: z.number().int().nonnegative(),
+  workspaceTabId: z.string().min(1),
+});
+
+export const GoForwardMessageSchema = z.object({
+  type: z.literal('GO_FORWARD'),
+  windowId: z.number().int().nonnegative(),
+  workspaceTabId: z.string().min(1),
+});
+
+export const ReloadMessageSchema = z.object({
+  type: z.literal('RELOAD'),
+  windowId: z.number().int().nonnegative(),
+  workspaceTabId: z.string().min(1),
+});
+
+export const GetSessionMessageSchema = z.object({
+  type: z.literal('GET_SESSION'),
   windowId: z.number().int().nonnegative(),
 });
 
-export const RestoreSessionMessageSchema = z.object({
-  type: z.literal('RESTORE_SESSION'),
+export const PanelReadyMessageSchema = z.object({
+  type: z.literal('PANEL_READY'),
 });
 
-export const UiReadyMessageSchema = z.object({
-  type: z.literal('UI_READY'),
-});
-
-export const DockRequestMessageSchema = z.discriminatedUnion('type', [
-  OpenDockMessageSchema,
-  CloseDockMessageSchema,
-  SetPinnedMessageSchema,
-  SetCollapsedMessageSchema,
-  NavigateWorkspaceTabMessageSchema,
-  CreateWorkspaceTabMessageSchema,
-  CloseWorkspaceTabMessageSchema,
-  ActivateWorkspaceTabMessageSchema,
-  SyncFallbackTabMessageSchema,
-  RequestHostAccessMessageSchema,
-  RestoreSessionMessageSchema,
-  UiReadyMessageSchema,
+export const PanelRequestSchema = z.discriminatedUnion('type', [
+  NavigateTabMessageSchema,
+  CreateTabMessageSchema,
+  CloseTabMessageSchema,
+  ActivateTabMessageSchema,
+  GoBackMessageSchema,
+  GoForwardMessageSchema,
+  ReloadMessageSchema,
+  GetSessionMessageSchema,
+  PanelReadyMessageSchema,
 ]);
 
 export const SessionUpdatedEventSchema = z.object({
   type: z.literal('SESSION_UPDATED'),
-  windowId: z.number().int().nonnegative(),
-  session: DockWindowSessionSchema,
+  session: SidePanelSessionSchema,
 });
 
-export const SessionClosedEventSchema = z.object({
-  type: z.literal('SESSION_CLOSED'),
-  windowId: z.number().int().nonnegative(),
-});
-
-export const DockEventMessageSchema = z.discriminatedUnion('type', [
+export const PanelEventSchema = z.discriminatedUnion('type', [
   SessionUpdatedEventSchema,
-  SessionClosedEventSchema,
 ]);
 
-export const DockResponseSchema = z.object({
+export const PanelResponseSchema = z.object({
   ok: z.boolean(),
-  session: DockWindowSessionSchema.optional(),
+  session: SidePanelSessionSchema.optional(),
   error: z.string().optional(),
 });
 
 export type WorkspaceTab = z.infer<typeof WorkspaceTabSchema>;
-export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
-export type DockWindowSession = z.infer<typeof DockWindowSessionSchema>;
-export type StoredWorkspaceSnapshot = z.infer<
-  typeof StoredWorkspaceSnapshotSchema
->;
-export type EmbedProbeResult = z.infer<typeof EmbedProbeResultSchema>;
-export type DockRequestMessage = z.infer<typeof DockRequestMessageSchema>;
-export type DockEventMessage = z.infer<typeof DockEventMessageSchema>;
-export type DockResponse = z.infer<typeof DockResponseSchema>;
-export type DockState = z.infer<typeof DockStateSchema>;
+export type SidePanelSession = z.infer<typeof SidePanelSessionSchema>;
+export type StoredSessionSnapshot = z.infer<typeof StoredSessionSnapshotSchema>;
+export type PanelRequest = z.infer<typeof PanelRequestSchema>;
+export type PanelEvent = z.infer<typeof PanelEventSchema>;
+export type PanelResponse = z.infer<typeof PanelResponseSchema>;

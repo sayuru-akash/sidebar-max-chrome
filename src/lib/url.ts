@@ -1,9 +1,6 @@
-import {
-  DEFAULT_WORKSPACE_TITLE,
-  SEARCH_ENGINE_URL,
-} from './constants';
+import { DEFAULT_WORKSPACE_TITLE, SEARCH_ENGINE_URL } from './constants';
 
-export function isSupportedDockUrl(input: string): boolean {
+export function isSupportedUrl(input: string): boolean {
   try {
     const url = new URL(input);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -12,16 +9,11 @@ export function isSupportedDockUrl(input: string): boolean {
   }
 }
 
-function looksLikeIpAddress(value: string): boolean {
-  return /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/.test(value);
-}
-
 function looksLikeHost(value: string): boolean {
   return (
     value.startsWith('localhost') ||
     value.startsWith('127.0.0.1') ||
-    value.includes('.') ||
-    looksLikeIpAddress(value)
+    value.includes('.')
   );
 }
 
@@ -31,27 +23,18 @@ export function normalizeAddressInput(input: string): {
 } {
   const trimmed = input.trim();
   if (trimmed.length === 0) {
-    return {
-      url: SEARCH_ENGINE_URL,
-      kind: 'search',
-    };
+    return { url: SEARCH_ENGINE_URL, kind: 'search' };
   }
 
   try {
     const directUrl = new URL(trimmed);
-    return {
-      url: directUrl.toString(),
-      kind: 'url',
-    };
+    return { url: directUrl.toString(), kind: 'url' };
   } catch {
     // fall through
   }
 
   if (!trimmed.includes(' ') && looksLikeHost(trimmed)) {
-    return {
-      url: new URL(`https://${trimmed}`).toString(),
-      kind: 'url',
-    };
+    return { url: new URL(`https://${trimmed}`).toString(), kind: 'url' };
   }
 
   return {
@@ -66,5 +49,14 @@ export function getDisplayTitle(url: string): string {
     return parsed.hostname.replace(/^www\./, '') || parsed.toString();
   } catch {
     return url || DEFAULT_WORKSPACE_TITLE;
+  }
+}
+
+export function getFaviconUrl(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl);
+    return `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=32`;
+  } catch {
+    return '';
   }
 }

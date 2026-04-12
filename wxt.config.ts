@@ -7,20 +7,39 @@ export default defineConfig({
     name: 'Sidebar Max',
     short_name: 'Sidebar Max',
     description:
-      'A collapsible right-dock browsing workspace for Chromium with hybrid embedded and native fallback tabs.',
-    version: '0.1.0',
+      'A native side panel workspace with real browser tabs, independent from your main browsing.',
+    version: '0.2.0',
     minimum_chrome_version: '116',
-    permissions: ['tabs', 'scripting', 'storage', 'commands', 'activeTab'],
+    permissions: [
+      'tabs',
+      'storage',
+      'sidePanel',
+      'declarativeNetRequest',
+      'favicon',
+      'commands',
+    ],
     host_permissions: ['<all_urls>'],
     action: {
       default_title: 'Toggle Sidebar Max',
     },
+    side_panel: {
+      default_path: 'sidepanel.html',
+    },
+    declarative_net_request: {
+      rule_resources: [
+        {
+          id: 'sidepanel_embed',
+          enabled: true,
+          path: 'rules.json',
+        },
+      ],
+    },
     commands: {
-      'toggle-dock': {
+      'toggle-panel': {
         suggested_key: {
           default: 'Ctrl+Shift+Y',
         },
-        description: 'Toggle Sidebar Max in the current tab',
+        description: 'Toggle Sidebar Max panel',
       },
     },
   },

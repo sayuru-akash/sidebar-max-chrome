@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   getDisplayTitle,
-  isSupportedDockUrl,
+  isSupportedUrl,
   normalizeAddressInput,
 } from '../src/lib/url';
 
@@ -26,9 +26,9 @@ describe('normalizeAddressInput', () => {
 
 describe('url helpers', () => {
   test('accepts http and https urls only', () => {
-    expect(isSupportedDockUrl('https://example.com')).toBe(true);
-    expect(isSupportedDockUrl('http://localhost:3000')).toBe(true);
-    expect(isSupportedDockUrl('chrome://extensions')).toBe(false);
+    expect(isSupportedUrl('https://example.com')).toBe(true);
+    expect(isSupportedUrl('http://localhost:3000')).toBe(true);
+    expect(isSupportedUrl('chrome://extensions')).toBe(false);
   });
 
   test('derives readable titles from hostnames', () => {

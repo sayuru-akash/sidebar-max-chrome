@@ -1,109 +1,69 @@
 import { describe, expect, test } from 'vitest';
 
-import type { UserPreferences } from '../src/lib/schema';
 import {
-  activateWorkspaceTab,
-  createWindowSession,
   createWorkspaceTab,
-  createWorkspaceTabInSession,
-  setCollapsedState,
-  setPinnedState,
+  createSession,
+  activateTab,
+  addTab,
+  removeTab,
+  updateTab,
 } from '../src/lib/workspace';
 
-const preferences: UserPreferences = {
-  defaultPinned: true,
-  dockWidth: 428,
-  reducedMotion: false,
-};
-
 describe('workspace session helpers', () => {
-  test('creates a pinned session by default', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-
+  test('creates a session with a default tab', () => {
+    const session = createSession(10);
     expect(session.windowId).toBe(10);
-    expect(session.pinned).toBe(true);
-    expect(session.state).toBe('pinned');
+    expect(session.workspaceTabs).toHaveLength(1);
+    expect(session.activeTabId).toBe(session.workspaceTabs[0].id);
+  });
+
+  test('creates a session from snapshot', () => {
+    const tab = createWorkspaceTab('https://example.com');
+    const session = createSession(10, {
+      activeTabId: tab.id,
+      workspaceTabs: [tab],
+      updatedAt: Date.now(),
+    });
+    expect(session.workspaceTabs).toHaveLength(1);
+    expect(session.activeTabId).toBe(tab.id);
+  });
+
+  test('adds a new tab and makes it active', () => {
+    let session = createSession(10);
+    const tab = createWorkspaceTab('https://second.example.com');
+    session = addTab(session, tab);
+    expect(session.workspaceTabs).toHaveLength(2);
+    expect(session.activeTabId).toBe(tab.id);
+  });
+
+  test('removes a tab and falls back to first', () => {
+    let session = createSession(10);
+    const tab = createWorkspaceTab('https://second.example.com');
+    session = addTab(session, tab);
+    session = removeTab(session, tab.id);
     expect(session.workspaceTabs).toHaveLength(1);
   });
 
-  test('creates and activates new workspace tabs', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-    const workspaceTab = createWorkspaceTab('https://second.example.com');
-    const nextSession = createWorkspaceTabInSession(session, workspaceTab);
-
-    expect(nextSession.activeWorkspaceTabId).toBe(workspaceTab.id);
-    expect(nextSession.workspaceTabs[0]?.id).toBe(workspaceTab.id);
+  test('removes last tab and creates fallback', () => {
+    let session = createSession(10);
+    const onlyId = session.workspaceTabs[0].id;
+    session = removeTab(session, onlyId);
+    expect(session.workspaceTabs).toHaveLength(1);
+    expect(session.workspaceTabs[0].id).not.toBe(onlyId);
   });
 
-  test('derives hover-expanded state for unpinned sessions', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-    const unpinned = setCollapsedState(setPinnedState(session, false), false);
-
-    expect(unpinned.state).toBe('hover-expanded');
-    expect(unpinned.pinned).toBe(false);
+  test('activates a tab by id', () => {
+    let session = createSession(10);
+    const tab = createWorkspaceTab('https://test.com');
+    session = addTab(session, tab);
+    session = activateTab(session, tab.id);
+    expect(session.activeTabId).toBe(tab.id);
   });
 
-  test('derives collapsed state when floating dock is collapsed', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-    const collapsed = setCollapsedState(setPinnedState(session, false), true);
-
-    expect(collapsed.state).toBe('collapsed');
-    expect(collapsed.collapsed).toBe(true);
-  });
-
-  test('unpinned sessions collapse immediately', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-    const collapsedSession = setPinnedState(session, false);
-
-    expect(collapsedSession.collapsed).toBe(true);
-    expect(collapsedSession.state).toBe('collapsed');
-  });
-
-  test('tracks tab activation timestamps', () => {
-    const session = createWindowSession(
-      10,
-      20,
-      preferences,
-      null,
-      'https://example.com',
-    );
-    const workspaceTab = createWorkspaceTab('https://second.example.com');
-    const updatedSession = createWorkspaceTabInSession(session, workspaceTab);
-    const activatedSession = activateWorkspaceTab(
-      updatedSession,
-      session.activeWorkspaceTabId,
-    );
-
-    expect(activatedSession.activeWorkspaceTabId).toBe(session.activeWorkspaceTabId);
+  test('updates tab properties', () => {
+    let session = createSession(10);
+    const tabId = session.workspaceTabs[0].id;
+    session = updateTab(session, tabId, { title: 'Updated' });
+    expect(session.workspaceTabs[0].title).toBe('Updated');
   });
 });
