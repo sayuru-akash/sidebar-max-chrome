@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -41,6 +42,10 @@ function Favicon({ tab }: { tab: WorkspaceTab }) {
 export function SidePanel() {
   const [session, setSession] = useState<SidePanelSession | null>(null);
   const [addressValue, setAddressValue] = useState('');
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const navHistory = useRef<Map<string, string[]>>(new Map());
 
   useEffect(() => {
     void send({ type: 'PANEL_READY' }).then((res) => {
@@ -67,15 +72,23 @@ export function SidePanel() {
   );
 
   useEffect(() => {
-    setAddressValue(activeTab?.url ?? '');
-  }, [activeTab?.id]);
+    if (activeTab) {
+      setAddressValue(activeTab.url);
+      setIframeError(false);
+      setIframeLoaded(false);
+    }
+  }, [activeTab?.id, activeTab?.url]);
 
   const windowId = session?.windowId ?? 0;
 
   const handleNavigate = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      if (!activeTab) return;
+      if (!activeTab || !addressValue.trim()) return;
+
+      const history = navHistory.current.get(activeTab.id) ?? [];
+      navHistory.current.set(activeTab.id, [...history, activeTab.url]);
+
       await send({
         type: 'NAVIGATE_TAB',
         windowId,
@@ -104,20 +117,40 @@ export function SidePanel() {
     [windowId],
   );
 
-  const handleBack = useCallback(async () => {
+  const handleBack = useCallback(() => {
     if (!activeTab) return;
-    await send({ type: 'GO_BACK', windowId, workspaceTabId: activeTab.id });
+    const history = navHistory.current.get(activeTab.id);
+    if (history && history.length > 0) {
+      const prevUrl = history.pop()!;
+      navHistory.current.set(activeTab.id, history);
+      void send({
+        type: 'NAVIGATE_TAB',
+        windowId,
+        workspaceTabId: activeTab.id,
+        input: prevUrl,
+      });
+    }
   }, [activeTab, windowId]);
 
-  const handleForward = useCallback(async () => {
-    if (!activeTab) return;
-    await send({ type: 'GO_FORWARD', windowId, workspaceTabId: activeTab.id });
-  }, [activeTab, windowId]);
+  const handleForward = useCallback(() => {
+    // forward nav not tracked in v1 — iframe handles its own internal forward via browser
+  }, []);
 
-  const handleReload = useCallback(async () => {
-    if (!activeTab) return;
-    await send({ type: 'RELOAD', windowId, workspaceTabId: activeTab.id });
-  }, [activeTab, windowId]);
+  const handleReload = useCallback(() => {
+    if (iframeRef.current) {
+      iframeRef.current.src = iframeRef.current.src;
+    }
+  }, []);
+
+  const handleIframeLoad = useCallback(() => {
+    setIframeLoaded(true);
+    setIframeError(false);
+  }, []);
+
+  const handleIframeError = useCallback(() => {
+    setIframeError(true);
+    setIframeLoaded(true);
+  }, []);
 
   if (!session) {
     return (
@@ -128,101 +161,128 @@ export function SidePanel() {
     );
   }
 
+  const showTabs = session.workspaceTabs.length > 1;
+
   return (
     <div className="sm">
-      <nav className="sm__tabbar" aria-label="Workspace tabs">
-        <button
-          className="sm__tab-btn sm__tab-btn--new"
-          onClick={() => void handleCreate()}
-          title="New tab"
-          type="button"
-        >
-          <PlusIcon className="sm__icon" />
-        </button>
-        <div className="sm__tablist">
-          {session.workspaceTabs.map((tab) => {
-            const isActive = tab.id === session.activeTabId;
-            return (
-              <div key={tab.id} className={`sm__tab-slot${isActive ? ' is-active' : ''}`}>
-                <button
-                  className="sm__tab-btn"
-                  onClick={() => void handleActivate(tab.id)}
-                  title={tab.title}
-                  type="button"
-                >
-                  <Favicon tab={tab} />
-                  <span className="sm__tab-label">{tab.title}</span>
-                </button>
-                {session.workspaceTabs.length > 1 && (
+      <header className="sm__toolbar">
+        <div className="sm__toolbar-row">
+          <div className="sm__nav-buttons">
+            <button
+              className="sm__icon-btn"
+              onClick={handleBack}
+              title="Back"
+              type="button"
+            >
+              <ArrowLeftIcon className="sm__icon" />
+            </button>
+            <button
+              className="sm__icon-btn"
+              onClick={handleForward}
+              title="Forward"
+              type="button"
+            >
+              <ArrowRightIcon className="sm__icon" />
+            </button>
+            <button
+              className="sm__icon-btn"
+              onClick={handleReload}
+              title="Reload"
+              type="button"
+            >
+              <RefreshIcon className="sm__icon" />
+            </button>
+          </div>
+
+          <form className="sm__address" onSubmit={(e) => void handleNavigate(e)}>
+            <label className="sm__search">
+              <SearchIcon className="sm__icon sm__icon--muted" />
+              <input
+                aria-label="Address or search"
+                autoComplete="off"
+                className="sm__input"
+                onChange={(e) => setAddressValue(e.target.value)}
+                spellCheck={false}
+                type="text"
+                value={addressValue}
+              />
+            </label>
+          </form>
+
+          <div className="sm__tab-actions">
+            <button
+              className="sm__icon-btn"
+              onClick={() => void handleCreate()}
+              title="New tab"
+              type="button"
+            >
+              <PlusIcon className="sm__icon" />
+            </button>
+          </div>
+        </div>
+
+        {showTabs && (
+          <div className="sm__tabstrip">
+            {session.workspaceTabs.map((tab) => {
+              const isActive = tab.id === session.activeTabId;
+              return (
+                <div key={tab.id} className={`sm__chip${isActive ? ' is-active' : ''}`}>
                   <button
-                    className="sm__tab-close"
+                    className="sm__chip-btn"
+                    onClick={() => void handleActivate(tab.id)}
+                    title={tab.title}
+                    type="button"
+                  >
+                    <Favicon tab={tab} />
+                    <span className="sm__chip-label">{tab.title}</span>
+                  </button>
+                  <button
+                    className="sm__chip-close"
                     onClick={() => void handleClose(tab.id)}
                     title={`Close ${tab.title}`}
                     type="button"
                   >
                     <CloseIcon className="sm__icon sm__icon--tiny" />
                   </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </nav>
-
-      <header className="sm__toolbar">
-        <div className="sm__nav-buttons">
-          <button
-            className="sm__icon-btn"
-            onClick={() => void handleBack()}
-            title="Back"
-            type="button"
-          >
-            <ArrowLeftIcon className="sm__icon" />
-          </button>
-          <button
-            className="sm__icon-btn"
-            onClick={() => void handleForward()}
-            title="Forward"
-            type="button"
-          >
-            <ArrowRightIcon className="sm__icon" />
-          </button>
-          <button
-            className="sm__icon-btn"
-            onClick={() => void handleReload()}
-            title="Reload"
-            type="button"
-          >
-            <RefreshIcon className="sm__icon" />
-          </button>
-        </div>
-
-        <form className="sm__address" onSubmit={(e) => void handleNavigate(e)}>
-          <label className="sm__search">
-            <SearchIcon className="sm__icon sm__icon--muted" />
-            <input
-              aria-label="Address or search"
-              autoComplete="off"
-              className="sm__input"
-              onChange={(e) => setAddressValue(e.target.value)}
-              spellCheck={false}
-              type="text"
-              value={addressValue}
-            />
-          </label>
-        </form>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </header>
+
+      <div className="sm__viewer">
+        {activeTab && (
+          <>
+            {!iframeLoaded && (
+              <div className="sm__viewer-loader">
+                <div className="sm__spinner" />
+              </div>
+            )}
+            {iframeError && (
+              <div className="sm__viewer-error">
+                <p>This page cannot be displayed in the sidebar.</p>
+                <p className="sm__viewer-error-hint">
+                  The site may use frame-busting techniques.
+                </p>
+              </div>
+            )}
+            <iframe
+              ref={iframeRef}
+              key={activeTab.id}
+              src={activeTab.url}
+              className="sm__iframe"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          </>
+        )}
+      </div>
 
       {session.lastError && (
         <div className="sm__error" role="alert">
           {session.lastError}
-        </div>
-      )}
-
-      {activeTab && (
-        <div className="sm__status">
-          <span className="sm__status-pill">Live</span>
-          <span className="sm__status-text">{activeTab.title}</span>
         </div>
       )}
     </div>

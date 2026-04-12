@@ -8,10 +8,9 @@ import {
   type PanelEvent,
   type PanelResponse,
   type SidePanelSession,
-  type WorkspaceTab,
 } from '../lib/schema';
 import { loadSessionSnapshot, saveSessionSnapshot, saveWindowSession } from '../lib/storage';
-import { getDisplayTitle, normalizeAddressInput } from '../lib/url';
+import { getDisplayTitle, getFaviconUrl, normalizeAddressInput } from '../lib/url';
 import {
   activateTab,
   addTab,
@@ -59,14 +58,6 @@ export class SidePanelController {
       return true;
     });
 
-    chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-      this.onTabUpdated(tabId, info as { url?: string; title?: string; favIconUrl?: string }, tab);
-    });
-
-    chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-      this.onTabRemoved(tabId, removeInfo.windowId);
-    });
-
     chrome.windows.onRemoved.addListener((windowId) => {
       void this.onWindowRemoved(windowId);
     });
@@ -74,10 +65,6 @@ export class SidePanelController {
 
   private async initialize(): Promise<void> {
     this.snapshot = await loadSessionSnapshot();
-  }
-
-  private getSession(windowId: number): SidePanelSession | null {
-    return this.sessions.get(windowId) ?? null;
   }
 
   private setSession(windowId: number, session: SidePanelSession): void {
@@ -125,21 +112,18 @@ export class SidePanelController {
       const session = createSession(windowId, this.snapshot);
       this.sessions.set(windowId, session);
       await saveWindowSession(session);
+    }
+  }
 
-      const tab = session.workspaceTabs[0];
-      if (tab) {
-        const created = await chrome.tabs.create({
-          windowId,
-          url: tab.url,
-          active: false,
-        });
-        const next = updateTab(session, tab.id, {
-          nativeTabId: created.id ?? null,
-          title: created.title ?? tab.title,
-          faviconUrl: created.favIconUrl ?? null,
-        });
-        this.sessions.set(windowId, next);
-      }
+  private async resolveWindowId(sender: RuntimeSender): Promise<number | null> {
+    if (sender.tab?.windowId !== undefined) {
+      return sender.tab.windowId;
+    }
+    try {
+      const win = await chrome.windows.getLastFocused();
+      return win.id ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -157,19 +141,8 @@ export class SidePanelController {
     const req = parsed.data;
 
     if (req.type === 'PANEL_READY') {
-      const windowId = sender.tab?.windowId;
-      if (windowId === undefined) {
-        // Try to find any active session or the last focused window
-        const lastFocused = await chrome.windows.getLastFocused();
-        if (lastFocused.id !== undefined) {
-          let session = this.sessions.get(lastFocused.id) ?? null;
-          if (!session) {
-            session = createSession(lastFocused.id, this.snapshot);
-            this.sessions.set(lastFocused.id, session);
-            await saveWindowSession(session);
-          }
-          return { ok: true, session };
-        }
+      const windowId = await this.resolveWindowId(sender);
+      if (windowId === null) {
         return { ok: false, error: 'Cannot determine window.' };
       }
 
@@ -200,15 +173,9 @@ export class SidePanelController {
         const url = rawInput
           ? normalizeAddressInput(rawInput).url
           : DEFAULT_WORKSPACE_START_URL;
-        const createdTab = await chrome.tabs.create({
-          windowId: session.windowId,
-          url,
-          active: true,
-        });
         const wsTab = createWorkspaceTab(url, {
-          nativeTabId: createdTab.id ?? null,
-          title: createdTab.title ?? getDisplayTitle(url),
-          faviconUrl: createdTab.favIconUrl ?? null,
+          title: getDisplayTitle(url),
+          faviconUrl: getFaviconUrl(url),
         });
         const next = addTab(session, wsTab);
         this.setSession(req.windowId, setError(next, null));
@@ -220,126 +187,36 @@ export class SidePanelController {
         if (!target) return { ok: false, error: 'Tab not found.' };
 
         const { url } = normalizeAddressInput(req.input);
-        if (target.nativeTabId !== null) {
-          await chrome.tabs.update(target.nativeTabId, { url, active: true });
-        } else {
-          const created = await chrome.tabs.create({
-            windowId: session.windowId,
-            url,
-            active: true,
-          });
-          const next = updateTab(session, target.id, {
-            nativeTabId: created.id ?? null,
-            url,
-          });
-          this.setSession(req.windowId, next);
-        }
+        const next = updateTab(session, target.id, {
+          url,
+          title: getDisplayTitle(url),
+          faviconUrl: getFaviconUrl(url),
+        });
+        this.setSession(req.windowId, setError(next, null));
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
       }
 
       case 'ACTIVATE_TAB': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (!target) return { ok: false, error: 'Tab not found.' };
-        if (target.nativeTabId !== null) {
-          await chrome.tabs.update(target.nativeTabId, { active: true });
-        }
         const next = activateTab(session, req.workspaceTabId);
         this.setSession(req.windowId, next);
         return { ok: true, session: next };
       }
 
       case 'CLOSE_TAB': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId !== null && target?.nativeTabId !== undefined) {
-          try {
-            await chrome.tabs.remove(target.nativeTabId);
-          } catch {
-            // already closed
-          }
-        }
         const next = removeTab(session, req.workspaceTabId);
-
-        // activate the new active tab's real tab
-        const newActive = next.workspaceTabs.find((t) => t.id === next.activeTabId);
-        if (newActive?.nativeTabId !== null && newActive?.nativeTabId !== undefined) {
-          try {
-            await chrome.tabs.update(newActive.nativeTabId, { active: true });
-          } catch {
-            // ignore
-          }
-        }
-
         this.setSession(req.windowId, setError(next, null));
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
       }
 
-      case 'GO_BACK': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId == null) return { ok: false, error: 'No native tab.' };
-        try {
-          await chrome.tabs.goBack(target.nativeTabId);
-        } catch {
-          // ignore
-        }
-        return { ok: true, session };
-      }
-
-      case 'GO_FORWARD': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId == null) return { ok: false, error: 'No native tab.' };
-        try {
-          await chrome.tabs.goForward(target.nativeTabId);
-        } catch {
-          // ignore
-        }
-        return { ok: true, session };
-      }
-
+      case 'GO_BACK':
+      case 'GO_FORWARD':
       case 'RELOAD': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId == null) return { ok: false, error: 'No native tab.' };
-        await chrome.tabs.reload(target.nativeTabId);
         return { ok: true, session };
       }
 
       default:
         return { ok: false, error: 'Unhandled.' };
     }
-  }
-
-  private onTabUpdated(
-    tabId: number,
-    info: { url?: string; title?: string; favIconUrl?: string },
-    tab: chrome.tabs.Tab,
-  ): void {
-    if (tab.windowId === undefined) return;
-
-    const session = this.sessions.get(tab.windowId);
-    if (!session) return;
-
-    const wsTab = session.workspaceTabs.find((t) => t.nativeTabId === tabId);
-    if (!wsTab) return;
-
-    const updates: Partial<WorkspaceTab> = {};
-    if (info.url) updates.url = info.url;
-    if (info.title) updates.title = info.title;
-    if (info.favIconUrl) updates.faviconUrl = info.favIconUrl;
-
-    if (Object.keys(updates).length > 0) {
-      const next = updateTab(session, wsTab.id, updates);
-      this.setSession(tab.windowId, next);
-    }
-  }
-
-  private onTabRemoved(tabId: number, windowId: number): void {
-    const session = this.sessions.get(windowId);
-    if (!session) return;
-
-    const wsTab = session.workspaceTabs.find((t) => t.nativeTabId === tabId);
-    if (!wsTab) return;
-
-    const next = removeTab(session, wsTab.id);
-    this.setSession(windowId, setError(next, null));
   }
 
   private async onWindowRemoved(windowId: number): Promise<void> {
