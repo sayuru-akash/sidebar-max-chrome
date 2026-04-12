@@ -1,4 +1,7 @@
-import { SEARCH_ENGINE_URL } from './constants';
+import {
+  DEFAULT_WORKSPACE_TITLE,
+  SEARCH_ENGINE_URL,
+} from './constants';
 
 export function isSupportedDockUrl(input: string): boolean {
   try {
@@ -62,7 +65,6 @@ export function getDisplayTitle(url: string): string {
     const parsed = new URL(url);
     return parsed.hostname.replace(/^www\./, '') || parsed.toString();
   } catch {
-    return url;
+    return url || DEFAULT_WORKSPACE_TITLE;
   }
 }
-

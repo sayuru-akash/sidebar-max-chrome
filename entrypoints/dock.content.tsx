@@ -17,8 +17,8 @@ type ShadowDockUi = {
 };
 
 export default defineContentScript({
-  matches: ['http://*/*', 'https://*/*'],
-  registration: 'manifest',
+  matches: ['<all_urls>'],
+  registration: 'runtime',
   cssInjectionMode: 'ui',
   async main(ctx) {
     if (document.documentElement.hasAttribute(MOUNTED_ATTRIBUTE)) {

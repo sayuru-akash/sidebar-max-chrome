@@ -8,7 +8,6 @@ import {
   createWorkspaceTabInSession,
   setCollapsedState,
   setPinnedState,
-  updateWorkspaceTab,
 } from '../src/lib/workspace';
 
 const preferences: UserPreferences = {
@@ -56,7 +55,7 @@ describe('workspace session helpers', () => {
       null,
       'https://example.com',
     );
-    const unpinned = setPinnedState(session, false);
+    const unpinned = setCollapsedState(setPinnedState(session, false), false);
 
     expect(unpinned.state).toBe('hover-expanded');
     expect(unpinned.pinned).toBe(false);
@@ -76,7 +75,7 @@ describe('workspace session helpers', () => {
     expect(collapsed.collapsed).toBe(true);
   });
 
-  test('enters native-fallback state when active tab is fallback', () => {
+  test('unpinned sessions collapse immediately', () => {
     const session = createWindowSession(
       10,
       20,
@@ -84,12 +83,10 @@ describe('workspace session helpers', () => {
       null,
       'https://example.com',
     );
-    const activeWorkspaceId = session.activeWorkspaceTabId;
-    const fallbackSession = updateWorkspaceTab(session, activeWorkspaceId, {
-      mode: 'nativeFallback',
-    });
+    const collapsedSession = setPinnedState(session, false);
 
-    expect(fallbackSession.state).toBe('native-fallback');
+    expect(collapsedSession.collapsed).toBe(true);
+    expect(collapsedSession.state).toBe('collapsed');
   });
 
   test('tracks tab activation timestamps', () => {

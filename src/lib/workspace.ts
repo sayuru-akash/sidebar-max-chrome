@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKSPACE_START_URL,
   DEFAULT_DOCK_WIDTH,
   DEFAULT_WORKSPACE_TITLE,
   LAST_SESSION_KEY,
@@ -44,12 +45,7 @@ export function createWorkspaceTab(
 export function deriveDockState(
   pinned: boolean,
   collapsed: boolean,
-  activeTab: WorkspaceTab | undefined,
 ): DockState {
-  if (activeTab?.mode === 'nativeFallback') {
-    return 'native-fallback';
-  }
-
   if (pinned) {
     return 'pinned';
   }
@@ -73,14 +69,14 @@ export function createWindowSession(
   const activeWorkspaceTab =
     seededTabs.find((tab) => tab.id === activeWorkspaceTabId) ?? seededTabs[0];
   const pinned = snapshot?.pinned ?? preferences.defaultPinned;
-  const collapsed = pinned ? false : false;
+  const collapsed = pinned ? false : true;
 
   return {
     windowId,
     currentBrowserTabId: browserTabId,
     activeWorkspaceTabId: activeWorkspaceTab.id,
     workspaceTabs: seededTabs,
-    state: deriveDockState(pinned, collapsed, activeWorkspaceTab),
+    state: deriveDockState(pinned, collapsed),
     pinned,
     collapsed,
     dockWidth: snapshot?.dockWidth ?? preferences.dockWidth ?? DEFAULT_DOCK_WIDTH,
@@ -108,7 +104,6 @@ function withSessionUpdate(
     state: deriveDockState(
       nextSession.pinned,
       nextSession.collapsed,
-      activeTab,
     ),
     updatedAt: now(),
   };
@@ -121,7 +116,7 @@ export function setPinnedState(
   return withSessionUpdate(session, (currentSession) => ({
     ...currentSession,
     pinned,
-    collapsed: pinned ? false : currentSession.collapsed,
+    collapsed: pinned ? false : true,
   }));
 }
 
@@ -185,7 +180,7 @@ export function closeWorkspaceTabInSession(
       workspaceTabs:
         nextTabs.length > 0
           ? nextTabs
-          : [createWorkspaceTab('https://www.google.com')],
+          : [createWorkspaceTab(DEFAULT_WORKSPACE_START_URL)],
       activeWorkspaceTabId: nextActiveId,
     };
   });
