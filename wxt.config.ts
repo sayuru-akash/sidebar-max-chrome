@@ -17,6 +17,7 @@ export default defineConfig({
       'declarativeNetRequest',
       'favicon',
       'commands',
+      'scripting',
     ],
     host_permissions: ['<all_urls>'],
     action: {

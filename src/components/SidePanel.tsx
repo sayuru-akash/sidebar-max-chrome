@@ -145,6 +145,24 @@ export function SidePanel() {
   const handleIframeLoad = useCallback(() => {
     setIframeLoaded(true);
     setIframeError(false);
+
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      const viewport = 'width=device-width, initial-scale=1, maximum-scale=5';
+      let meta = doc.querySelector('meta[name="viewport"]');
+      if (!meta) {
+        meta = doc.createElement('meta');
+        meta.setAttribute('name', 'viewport');
+        (doc.head || doc.documentElement).prepend(meta);
+      }
+      meta.setAttribute('content', viewport);
+    } catch {
+      // cross-origin — content script handles it
+    }
   }, []);
 
   const handleIframeError = useCallback(() => {
