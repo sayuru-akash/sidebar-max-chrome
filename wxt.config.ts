@@ -12,6 +12,7 @@ export default defineConfig({
     minimum_chrome_version: '116',
     permissions: [
       'tabs',
+      'tabGroups',
       'storage',
       'sidePanel',
       'declarativeNetRequest',

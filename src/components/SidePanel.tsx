@@ -21,8 +21,6 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   RefreshIcon,
-  PinIcon,
-  UnpinIcon,
 } from './icons';
 
 async function send(message: object): Promise<PanelResponse> {
@@ -74,8 +72,6 @@ export function SidePanel() {
     [session],
   );
 
-  const pinned = session?.pinned ?? true;
-
   useEffect(() => {
     if (activeTab && activeTab.id !== currentTabIdRef.current) {
       currentTabIdRef.current = activeTab.id;
@@ -123,34 +119,21 @@ export function SidePanel() {
     [windowId],
   );
 
-  const handleTogglePin = useCallback(async () => {
-    await send({ type: 'SET_PINNED', windowId, pinned: !pinned });
-  }, [windowId, pinned]);
-
-  const handleBack = useCallback(() => {
+  const handleBack = useCallback(async () => {
     if (!activeTab) return;
-    const history = navHistory.current.get(activeTab.id);
-    if (history && history.length > 0) {
-      const prevUrl = history.pop()!;
-      navHistory.current.set(activeTab.id, history);
-      void send({
-        type: 'NAVIGATE_TAB',
-        windowId,
-        workspaceTabId: activeTab.id,
-        input: prevUrl,
-      });
-    }
+    await send({ type: 'GO_BACK', windowId, workspaceTabId: activeTab.id });
   }, [activeTab, windowId]);
 
-  const handleForward = useCallback(() => {
-    // forward nav not tracked in v1
-  }, []);
+  const handleForward = useCallback(async () => {
+    if (!activeTab) return;
+    await send({ type: 'GO_FORWARD', windowId, workspaceTabId: activeTab.id });
+  }, [activeTab, windowId]);
 
-  const handleReload = useCallback(() => {
-    if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src;
-    }
-  }, []);
+  const handleReload = useCallback(async () => {
+    if (!activeTab) return;
+    setIframeLoaded(false);
+    await send({ type: 'RELOAD', windowId, workspaceTabId: activeTab.id });
+  }, [activeTab, windowId]);
 
   const handleIframeLoad = useCallback(() => {
     setIframeLoaded(true);
@@ -192,15 +175,85 @@ export function SidePanel() {
   const showTabs = session.workspaceTabs.length > 1;
 
   return (
-    <div className={`sm${pinned ? ' is-pinned' : ' is-unpinned'}`}>
-      {/* Always-mounted iframe — never destroyed */}
-      <div className={`sm__viewer${pinned ? '' : ' is-hidden'}`}>
-        {!iframeLoaded && pinned && (
+    <div className="sm">
+      <header className="sm__toolbar">
+        <div className="sm__toolbar-row">
+          <div className="sm__nav-buttons">
+            <button className="sm__icon-btn" onClick={() => void handleBack()} title="Back" type="button">
+              <ArrowLeftIcon className="sm__icon" />
+            </button>
+            <button className="sm__icon-btn" onClick={() => void handleForward()} title="Forward" type="button">
+              <ArrowRightIcon className="sm__icon" />
+            </button>
+            <button className="sm__icon-btn" onClick={() => void handleReload()} title="Reload" type="button">
+              <RefreshIcon className="sm__icon" />
+            </button>
+          </div>
+
+          <form className="sm__address" onSubmit={(e) => void handleNavigate(e)}>
+            <label className="sm__search">
+              <SearchIcon className="sm__icon sm__icon--muted" />
+              <input
+                aria-label="Address or search"
+                autoComplete="off"
+                className="sm__input"
+                onChange={(e) => setAddressValue(e.target.value)}
+                spellCheck={false}
+                type="text"
+                value={addressValue}
+              />
+            </label>
+          </form>
+
+          <div className="sm__tab-actions">
+            <button
+              className="sm__icon-btn"
+              onClick={() => void handleCreate()}
+              title="New tab"
+              type="button"
+            >
+              <PlusIcon className="sm__icon" />
+            </button>
+          </div>
+        </div>
+
+        {showTabs && (
+          <div className="sm__tabstrip">
+            {session.workspaceTabs.map((tab) => {
+              const isActive = tab.id === session.activeTabId;
+              return (
+                <div key={tab.id} className={`sm__chip${isActive ? ' is-active' : ''}`}>
+                  <button
+                    className="sm__chip-btn"
+                    onClick={() => void handleActivate(tab.id)}
+                    title={tab.title}
+                    type="button"
+                  >
+                    <Favicon tab={tab} />
+                    <span className="sm__chip-label">{tab.title}</span>
+                  </button>
+                  <button
+                    className="sm__chip-close"
+                    onClick={() => void handleClose(tab.id)}
+                    title={`Close ${tab.title}`}
+                    type="button"
+                  >
+                    <CloseIcon className="sm__icon sm__icon--tiny" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </header>
+
+      <div className="sm__viewer">
+        {!iframeLoaded && (
           <div className="sm__viewer-loader">
             <div className="sm__spinner" />
           </div>
         )}
-        {iframeError && pinned && (
+        {iframeError && (
           <div className="sm__viewer-error">
             <p>This page cannot be displayed in the sidebar.</p>
             <p className="sm__viewer-error-hint">
@@ -218,143 +271,6 @@ export function SidePanel() {
           onError={handleIframeError}
         />
       </div>
-
-      {/* Full toolbar — visible when pinned */}
-      {pinned && (
-        <header className="sm__toolbar">
-          <div className="sm__toolbar-row">
-            <div className="sm__nav-buttons">
-              <button className="sm__icon-btn" onClick={handleBack} title="Back" type="button">
-                <ArrowLeftIcon className="sm__icon" />
-              </button>
-              <button className="sm__icon-btn" onClick={handleForward} title="Forward" type="button">
-                <ArrowRightIcon className="sm__icon" />
-              </button>
-              <button className="sm__icon-btn" onClick={handleReload} title="Reload" type="button">
-                <RefreshIcon className="sm__icon" />
-              </button>
-            </div>
-
-            <form className="sm__address" onSubmit={(e) => void handleNavigate(e)}>
-              <label className="sm__search">
-                <SearchIcon className="sm__icon sm__icon--muted" />
-                <input
-                  aria-label="Address or search"
-                  autoComplete="off"
-                  className="sm__input"
-                  onChange={(e) => setAddressValue(e.target.value)}
-                  spellCheck={false}
-                  type="text"
-                  value={addressValue}
-                />
-              </label>
-            </form>
-
-            <div className="sm__tab-actions">
-              <button
-                className="sm__icon-btn"
-                onClick={() => void handleCreate()}
-                title="New tab"
-                type="button"
-              >
-                <PlusIcon className="sm__icon" />
-              </button>
-              <button
-                className="sm__icon-btn sm__icon-btn--unpin"
-                onClick={() => void handleTogglePin()}
-                title="Unpin sidebar"
-                type="button"
-              >
-                <UnpinIcon className="sm__icon" />
-              </button>
-            </div>
-          </div>
-
-          {showTabs && (
-            <div className="sm__tabstrip">
-              {session.workspaceTabs.map((tab) => {
-                const isActive = tab.id === session.activeTabId;
-                return (
-                  <div key={tab.id} className={`sm__chip${isActive ? ' is-active' : ''}`}>
-                    <button
-                      className="sm__chip-btn"
-                      onClick={() => void handleActivate(tab.id)}
-                      title={tab.title}
-                      type="button"
-                    >
-                      <Favicon tab={tab} />
-                      <span className="sm__chip-label">{tab.title}</span>
-                    </button>
-                    <button
-                      className="sm__chip-close"
-                      onClick={() => void handleClose(tab.id)}
-                      title={`Close ${tab.title}`}
-                      type="button"
-                    >
-                      <CloseIcon className="sm__icon sm__icon--tiny" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </header>
-      )}
-
-      {/* Collapsed overlay — full-width compact tab manager */}
-      {!pinned && (
-        <div className="sm__overlay">
-          <div className="sm__overlay-header">
-            <span className="sm__overlay-title">Sidebar Max</span>
-            <button
-              className="sm__overlay-pin"
-              onClick={() => void handleTogglePin()}
-              title="Pin sidebar"
-              type="button"
-            >
-              <PinIcon className="sm__icon" />
-              <span>Pin</span>
-            </button>
-          </div>
-          <div className="sm__overlay-tabs">
-            {session.workspaceTabs.map((tab) => {
-              const isActive = tab.id === session.activeTabId;
-              return (
-                <div key={tab.id} className={`sm__overlay-tab${isActive ? ' is-active' : ''}`}>
-                  <button
-                    className="sm__overlay-tab-btn"
-                    onClick={() => void handleActivate(tab.id)}
-                    title={tab.title}
-                    type="button"
-                  >
-                    <Favicon tab={tab} />
-                    <span className="sm__overlay-tab-title">{tab.title}</span>
-                  </button>
-                  {session.workspaceTabs.length > 1 && (
-                    <button
-                      className="sm__overlay-tab-close"
-                      onClick={() => void handleClose(tab.id)}
-                      title={`Close ${tab.title}`}
-                      type="button"
-                    >
-                      <CloseIcon className="sm__icon sm__icon--tiny" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <button
-            className="sm__overlay-new"
-            onClick={() => void handleCreate()}
-            title="New tab"
-            type="button"
-          >
-            <PlusIcon className="sm__icon" />
-            <span>New Tab</span>
-          </button>
-        </div>
-      )}
 
       {session.lastError && (
         <div className="sm__error" role="alert">

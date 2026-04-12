@@ -13,6 +13,7 @@ export const SidePanelSessionSchema = z.object({
   windowId: z.number().int().nonnegative(),
   activeTabId: z.string().min(1),
   workspaceTabs: z.array(WorkspaceTabSchema).min(0),
+  tabGroupId: z.number().int().nullable(),
   pinned: z.boolean(),
   lastError: z.string().nullable(),
   updatedAt: z.number().int().nonnegative(),
