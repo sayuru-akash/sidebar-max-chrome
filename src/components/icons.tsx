@@ -73,3 +73,17 @@ export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function UnpinIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" {...props}>
+      <path
+        d="M15.6 4.4 19 7.8l-2.6 2.6v3.4l-2.4 2.4-2.9-2.9-4.7 6.1-.6-.6 6.1-4.7-2.9-2.9 2.4-2.4h3.4z"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line x1="3" y1="3" x2="21" y2="21" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

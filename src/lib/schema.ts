@@ -13,6 +13,7 @@ export const SidePanelSessionSchema = z.object({
   windowId: z.number().int().nonnegative(),
   activeTabId: z.string().min(1),
   workspaceTabs: z.array(WorkspaceTabSchema).min(0),
+  pinned: z.boolean(),
   lastError: z.string().nullable(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -66,6 +67,12 @@ export const ReloadMessageSchema = z.object({
   workspaceTabId: z.string().min(1),
 });
 
+export const SetPinnedMessageSchema = z.object({
+  type: z.literal('SET_PINNED'),
+  windowId: z.number().int().nonnegative(),
+  pinned: z.boolean(),
+});
+
 export const GetSessionMessageSchema = z.object({
   type: z.literal('GET_SESSION'),
   windowId: z.number().int().nonnegative(),
@@ -83,6 +90,7 @@ export const PanelRequestSchema = z.discriminatedUnion('type', [
   GoBackMessageSchema,
   GoForwardMessageSchema,
   ReloadMessageSchema,
+  SetPinnedMessageSchema,
   GetSessionMessageSchema,
   PanelReadyMessageSchema,
 ]);

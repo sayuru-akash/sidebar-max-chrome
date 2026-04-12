@@ -46,6 +46,7 @@ export function createSession(
     windowId,
     activeTabId,
     workspaceTabs: tabs,
+    pinned: true,
     lastError: null,
     updatedAt: now(),
   };
@@ -117,6 +118,13 @@ export function updateTab(
     ),
     updatedAt: now(),
   };
+}
+
+export function setPinned(
+  session: SidePanelSession,
+  pinned: boolean,
+): SidePanelSession {
+  return { ...session, pinned, updatedAt: now() };
 }
 
 export function setError(

@@ -18,6 +18,7 @@ import {
   createWorkspaceTab,
   removeTab,
   setError,
+  setPinned,
   toSnapshot,
   updateTab,
 } from '../lib/workspace';
@@ -39,7 +40,7 @@ export class SidePanelController {
 
     chrome.action.onClicked.addListener((tab) => {
       if (tab.windowId !== undefined) {
-        void this.togglePanel(tab.windowId);
+        void this.onActionClicked(tab.windowId);
       }
     });
 
@@ -47,7 +48,7 @@ export class SidePanelController {
       if (command === TOGGLE_COMMAND) {
         void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
           if (tab?.windowId !== undefined) {
-            void this.togglePanel(tab.windowId);
+            void this.onActionClicked(tab.windowId);
           }
         });
       }
@@ -106,12 +107,23 @@ export class SidePanelController {
     });
   }
 
-  private async togglePanel(windowId: number): Promise<void> {
-    await chrome.sidePanel.open({ windowId });
-    if (!this.sessions.has(windowId)) {
-      const session = createSession(windowId, this.snapshot);
-      this.sessions.set(windowId, session);
-      await saveWindowSession(session);
+  private async onActionClicked(windowId: number): Promise<void> {
+    const session = this.sessions.get(windowId);
+    if (!session) {
+      await chrome.sidePanel.open({ windowId });
+      const newSession = createSession(windowId, this.snapshot);
+      this.sessions.set(windowId, newSession);
+      await saveWindowSession(newSession);
+      return;
+    }
+
+    if (!session.pinned) {
+      const next = setPinned(session, true);
+      this.setSession(windowId, next);
+      await chrome.sidePanel.open({ windowId });
+    } else {
+      const next = setPinned(session, false);
+      this.setSession(windowId, next);
     }
   }
 
@@ -206,6 +218,12 @@ export class SidePanelController {
         const next = removeTab(session, req.workspaceTabId);
         this.setSession(req.windowId, setError(next, null));
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
+      }
+
+      case 'SET_PINNED': {
+        const next = setPinned(session, req.pinned);
+        this.setSession(req.windowId, next);
+        return { ok: true, session: next };
       }
 
       case 'GO_BACK':
