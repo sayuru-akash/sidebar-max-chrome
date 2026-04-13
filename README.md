@@ -1,3 +1,20 @@
+> **⚠️ PROJECT DISCONTINUED**
+>
+> This project has been discontinued. The core goal — a sidebar browser where tabs keep running (video, audio, JS) when the sidebar is closed and resume seamlessly when reopened — cannot be reliably achieved with current APIs.
+>
+> **Chrome Extension limitations:**
+>
+> 1. **Side Panel DOM is destroyed on close** — Chrome's `sidePanel` API destroys the entire DOM when the panel closes. No API prevents this. Iframes die, media stops, state is lost.
+> 2. **Offscreen Document is a separate context** — `chrome.offscreen` creates a hidden document that survives panel close, but it runs a completely separate page instance. Cannot share DOM state, video position, or JS context with the sidebar.
+> 3. **No way to mirror or transfer video frames** — Chrome extensions cannot capture or stream video frames between documents.
+> 4. **Two-instance sync is fundamentally broken** — Sidebar + offscreen loading the same URL creates two independent pages. Sync causes reload loops, double audio, and position desync.
+> 5. **Background tabs are separate instances** — `autoDiscardable: false` + tab groups still creates separate page instances from the sidebar iframe.
+> 6. **Cross-origin sync is unreliable** — `contentWindow.location` access is blocked cross-origin. Content script interception is fragile and site-dependent.
+>
+> **Tauri Desktop App:**
+>
+> Also discontinued. While Tauri v2's `window.add_child()` API for embedding native WebViews in a single window is technically the right approach, it requires the `unstable` feature flag and was not fully built or tested. Without a working Chrome extension to validate the UX concept, the desktop app effort is also shelved.
+
 <div align="center">
 
 # 🚀 Sidebar Max
@@ -48,33 +65,33 @@
 
 ### 🌐 Chrome Extension Features
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| 🔲 **Native Side Panel** | Chrome's official sidePanel API integration with persistent workspace | ✅ |
-| 📑 **Multi-Tab Workspace** | Create, manage, and switch between multiple tabs in the sidebar | ✅ |
-| 💾 **Session Persistence** | Automatic session save/restore with chrome.storage.local | ✅ |
-| 🔗 **Chrome Tab Groups** | Auto-creates "Sidebar Max" tab group for backing tabs | ✅ |
-| 🖼️ **Frame Embedding** | Removes X-Frame-Options and CSP headers via declarativeNetRequest | ✅ |
-| 🔊 **Media Keep-Alive** | Prevents background tabs from being discarded, auto-plays media | ✅ |
-| 🔍 **Smart URL Input** | Automatically detects URLs vs search queries | ✅ |
-| 🎨 **Modern UI** | Glassmorphism design with smooth animations | ✅ |
-| ⌨️ **Keyboard Shortcuts** | Ctrl+Shift+Y to toggle panel | ✅ |
-| 🔄 **Navigation Controls** | Back, forward, reload buttons per tab | ✅ |
-| 🏷️ **Favicon Support** | Displays site favicons via Google S2 service | ✅ |
-| 🛡️ **Type Safety** | Full Zod schema validation for all messages | ✅ |
+| Feature                    | Description                                                           | Status |
+| -------------------------- | --------------------------------------------------------------------- | ------ |
+| 🔲 **Native Side Panel**   | Chrome's official sidePanel API integration with persistent workspace | ✅     |
+| 📑 **Multi-Tab Workspace** | Create, manage, and switch between multiple tabs in the sidebar       | ✅     |
+| 💾 **Session Persistence** | Automatic session save/restore with chrome.storage.local              | ✅     |
+| 🔗 **Chrome Tab Groups**   | Auto-creates "Sidebar Max" tab group for backing tabs                 | ✅     |
+| 🖼️ **Frame Embedding**     | Removes X-Frame-Options and CSP headers via declarativeNetRequest     | ✅     |
+| 🔊 **Media Keep-Alive**    | Prevents background tabs from being discarded, auto-plays media       | ✅     |
+| 🔍 **Smart URL Input**     | Automatically detects URLs vs search queries                          | ✅     |
+| 🎨 **Modern UI**           | Glassmorphism design with smooth animations                           | ✅     |
+| ⌨️ **Keyboard Shortcuts**  | Ctrl+Shift+Y to toggle panel                                          | ✅     |
+| 🔄 **Navigation Controls** | Back, forward, reload buttons per tab                                 | ✅     |
+| 🏷️ **Favicon Support**     | Displays site favicons via Google S2 service                          | ✅     |
+| 🛡️ **Type Safety**         | Full Zod schema validation for all messages                           | ✅     |
 
 ### 🖥️ Tauri Desktop App Features
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| 🪟 **Native Window** | Standalone floating sidebar window (420×900px) | ✅ |
-| 🧩 **Child WebViews** | Each tab runs in its own native WebView | ✅ |
-| 🎛️ **Rust Backend** | High-performance native backend with Tauri v2 | ✅ |
-| 📊 **State Management** | Mutex-protected workspace state | ✅ |
-| 🔀 **Tab Switching** | Seamless tab activation with layout management | ✅ |
-| 🧭 **Navigation** | Programmatic navigation with back/forward support | ✅ |
-| 📐 **Responsive Layout** | Auto-adjusts on window resize | ✅ |
-| 🔗 **Shell Integration** | Tauri shell plugin for system integration | ✅ |
+| Feature                  | Description                                       | Status |
+| ------------------------ | ------------------------------------------------- | ------ |
+| 🪟 **Native Window**     | Standalone floating sidebar window (420×900px)    | ✅     |
+| 🧩 **Child WebViews**    | Each tab runs in its own native WebView           | ✅     |
+| 🎛️ **Rust Backend**      | High-performance native backend with Tauri v2     | ✅     |
+| 📊 **State Management**  | Mutex-protected workspace state                   | ✅     |
+| 🔀 **Tab Switching**     | Seamless tab activation with layout management    | ✅     |
+| 🧭 **Navigation**        | Programmatic navigation with back/forward support | ✅     |
+| 📐 **Responsive Layout** | Auto-adjusts on window resize                     | ✅     |
+| 🔗 **Shell Integration** | Tauri shell plugin for system integration         | ✅     |
 
 ---
 
@@ -176,19 +193,18 @@ All messages between UI and background use **Zod-validated schemas** for type sa
 
 ```typescript
 // Panel Request Messages
-- CREATE_TAB         // Create new workspace tab
-- NAVIGATE_TAB       // Navigate tab to URL/search
-- ACTIVATE_TAB       // Switch active tab
-- CLOSE_TAB          // Close workspace tab
-- GO_BACK/FORWARD    // Browser navigation
-- RELOAD             // Refresh tab
-- SET_PINNED         // Pin/unpin sidebar
-- GET_SESSION        // Request current session
-- PANEL_READY        // UI initialization signal
-- SYNC_IFRAME_URL    // URL sync from iframe
-
-// Panel Events (Background → UI)
-- SESSION_UPDATED    // Push session state changes
+-CREATE_TAB - // Create new workspace tab
+  NAVIGATE_TAB - // Navigate tab to URL/search
+  ACTIVATE_TAB - // Switch active tab
+  CLOSE_TAB - // Close workspace tab
+  GO_BACK / FORWARD - // Browser navigation
+  RELOAD - // Refresh tab
+  SET_PINNED - // Pin/unpin sidebar
+  GET_SESSION - // Request current session
+  PANEL_READY - // UI initialization signal
+  SYNC_IFRAME_URL - // URL sync from iframe
+  // Panel Events (Background → UI)
+  SESSION_UPDATED; // Push session state changes
 ```
 
 ---
@@ -198,6 +214,7 @@ All messages between UI and background use **Zod-validated schemas** for type sa
 ### 🔶 Chrome Extension
 
 #### Option 1: Chrome Web Store (Coming Soon)
+
 ```
 🚧 Pending Chrome Web Store review
 ```
@@ -205,6 +222,7 @@ All messages between UI and background use **Zod-validated schemas** for type sa
 #### Option 2: Load Unpacked (Development)
 
 1. **Build the extension:**
+
    ```bash
    npm install
    npm run build
@@ -227,22 +245,26 @@ All messages between UI and background use **Zod-validated schemas** for type sa
 ### 🔷 Tauri Desktop App
 
 #### Prerequisites
+
 - [Rust](https://rustup.rs/) (latest stable)
 - [Node.js](https://nodejs.org/) 18+
 - System dependencies (see [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
 
 #### macOS Prerequisites
+
 ```bash
 xcode-select --install
 ```
 
 #### Linux Prerequisites
+
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget libssl-dev libgtk-3-dev libappindicator3-dev librsvg2-dev
 ```
 
 #### Build & Run
+
 ```bash
 # Install dependencies
 npm install
@@ -315,28 +337,28 @@ npm run tauri:dev
 
 ### 🎯 Basic Operations
 
-| Action | How To |
-|--------|--------|
+| Action             | How To                                       |
+| ------------------ | -------------------------------------------- |
 | **Toggle Sidebar** | Click extension icon or press `Ctrl+Shift+Y` |
-| **New Tab** | Click `[+]` button or `Ctrl+Shift+N` |
-| **Close Tab** | Click `×` on tab |
-| **Switch Tab** | Click tab in strip |
-| **Navigate** | Type in address bar, press Enter |
-| **Go Back** | Click `[←]` button |
-| **Reload** | Click `[↻]` button |
-| **Pin/Unpin** | Click pin icon (📌) |
+| **New Tab**        | Click `[+]` button or `Ctrl+Shift+N`         |
+| **Close Tab**      | Click `×` on tab                             |
+| **Switch Tab**     | Click tab in strip                           |
+| **Navigate**       | Type in address bar, press Enter             |
+| **Go Back**        | Click `[←]` button                           |
+| **Reload**         | Click `[↻]` button                           |
+| **Pin/Unpin**      | Click pin icon (📌)                          |
 
 ### 🔍 Address Bar Smart Input
 
 The address bar intelligently handles your input:
 
-| Input | Result |
-|-------|--------|
-| `https://example.com` | Direct URL navigation |
-| `example.com` | Auto-prefixed to `https://example.com` |
-| `localhost:3000` | Direct localhost navigation |
-| `how to write react hooks` | Google search |
-| `github.com/facebook/react` | Direct navigation |
+| Input                       | Result                                 |
+| --------------------------- | -------------------------------------- |
+| `https://example.com`       | Direct URL navigation                  |
+| `example.com`               | Auto-prefixed to `https://example.com` |
+| `localhost:3000`            | Direct localhost navigation            |
+| `how to write react hooks`  | Google search                          |
+| `github.com/facebook/react` | Direct navigation                      |
 
 ### 📑 Tab Management
 
@@ -348,6 +370,7 @@ The address bar intelligently handles your input:
 ### 🎵 Media Handling
 
 Background tabs with media (YouTube, Spotify, etc.) are:
+
 - Marked as non-discardable (won't be killed by Chrome)
 - Auto-reloaded if discarded
 - Auto-play injected every 24 seconds to keep alive
@@ -358,12 +381,12 @@ Background tabs with media (YouTube, Spotify, etc.) are:
 
 ### 📋 Prerequisites
 
-| Requirement | Version | Purpose |
-|-------------|---------|---------|
-| Node.js | 18+ | Build tooling, React |
-| npm | 11.12.0 | Package management |
-| Rust | Latest stable | Tauri backend |
-| Chrome | 116+ | Extension target |
+| Requirement | Version       | Purpose              |
+| ----------- | ------------- | -------------------- |
+| Node.js     | 18+           | Build tooling, React |
+| npm         | 11.12.0       | Package management   |
+| Rust        | Latest stable | Tauri backend        |
+| Chrome      | 116+          | Extension target     |
 
 ### 🏗️ Build Commands
 
@@ -373,7 +396,7 @@ npm run dev           # Start WXT dev server with hot reload
 npm run build         # Production build for Chrome Web Store
 npm run zip           # Create distributable zip
 
-# Desktop App Development  
+# Desktop App Development
 npm run dev:app       # Vite dev server for app UI
 npm run build:app     # Build app UI only
 npm run tauri:dev     # Full Tauri dev with Rust backend
@@ -489,14 +512,14 @@ sidebar-max-chrome/
 
 ### 🔍 Key Files Explained
 
-| File | Purpose | Lines |
-|------|---------|-------|
-| `controller.ts` | Main background controller - session management, tab sync, message handling | 545 |
-| `main.rs` | Tauri Rust backend - native WebView management, state | 348 |
-| `schema.ts` | Zod schemas - type-safe message validation | 132 |
-| `SidePanel.tsx` | React side panel UI - tabs, navigation, iframe | ~300 |
-| `workspace.ts` | Session state logic - CRUD operations for tabs | 153 |
-| `url.ts` | URL normalization - search vs URL detection | 62 |
+| File            | Purpose                                                                     | Lines |
+| --------------- | --------------------------------------------------------------------------- | ----- |
+| `controller.ts` | Main background controller - session management, tab sync, message handling | 545   |
+| `main.rs`       | Tauri Rust backend - native WebView management, state                       | 348   |
+| `schema.ts`     | Zod schemas - type-safe message validation                                  | 132   |
+| `SidePanel.tsx` | React side panel UI - tabs, navigation, iframe                              | ~300  |
+| `workspace.ts`  | Session state logic - CRUD operations for tabs                              | 153   |
+| `url.ts`        | URL normalization - search vs URL detection                                 | 62    |
 
 ---
 
@@ -509,12 +532,12 @@ sidebar-max-chrome/
 ```typescript
 // Workspace Tab
 interface WorkspaceTab {
-  id: string;              // Unique tab ID (UUID)
-  url: string;             // Current URL
-  title: string;           // Display title
+  id: string; // Unique tab ID (UUID)
+  url: string; // Current URL
+  title: string; // Display title
   faviconUrl: string | null;
-  nativeTabId: number | null;  // Chrome tab ID
-  lastActiveAt: number;    // Timestamp
+  nativeTabId: number | null; // Chrome tab ID
+  lastActiveAt: number; // Timestamp
 }
 
 // Side Panel Session
@@ -538,19 +561,19 @@ interface StoredSessionSnapshot {
 
 #### Panel Request Messages
 
-| Message | Schema | Description |
-|---------|--------|-------------|
-| `CREATE_TAB` | `{ type, windowId, input? }` | Create new tab with optional URL |
-| `NAVIGATE_TAB` | `{ type, windowId, workspaceTabId, input }` | Navigate tab to URL/search |
-| `ACTIVATE_TAB` | `{ type, windowId, workspaceTabId }` | Switch to tab |
-| `CLOSE_TAB` | `{ type, windowId, workspaceTabId }` | Close tab |
-| `GO_BACK` | `{ type, windowId, workspaceTabId }` | Browser back |
-| `GO_FORWARD` | `{ type, windowId, workspaceTabId }` | Browser forward |
-| `RELOAD` | `{ type, windowId, workspaceTabId }` | Refresh page |
-| `SET_PINNED` | `{ type, windowId, pinned }` | Pin/unpin sidebar |
-| `GET_SESSION` | `{ type, windowId }` | Request session state |
-| `PANEL_READY` | `{ type }` | UI initialized |
-| `SYNC_IFRAME_URL` | `{ type, url }` | URL changed in iframe |
+| Message           | Schema                                      | Description                      |
+| ----------------- | ------------------------------------------- | -------------------------------- |
+| `CREATE_TAB`      | `{ type, windowId, input? }`                | Create new tab with optional URL |
+| `NAVIGATE_TAB`    | `{ type, windowId, workspaceTabId, input }` | Navigate tab to URL/search       |
+| `ACTIVATE_TAB`    | `{ type, windowId, workspaceTabId }`        | Switch to tab                    |
+| `CLOSE_TAB`       | `{ type, windowId, workspaceTabId }`        | Close tab                        |
+| `GO_BACK`         | `{ type, windowId, workspaceTabId }`        | Browser back                     |
+| `GO_FORWARD`      | `{ type, windowId, workspaceTabId }`        | Browser forward                  |
+| `RELOAD`          | `{ type, windowId, workspaceTabId }`        | Refresh page                     |
+| `SET_PINNED`      | `{ type, windowId, pinned }`                | Pin/unpin sidebar                |
+| `GET_SESSION`     | `{ type, windowId }`                        | Request session state            |
+| `PANEL_READY`     | `{ type }`                                  | UI initialized                   |
+| `SYNC_IFRAME_URL` | `{ type, url }`                             | URL changed in iframe            |
 
 #### Panel Events (Background → UI)
 
@@ -564,10 +587,10 @@ interface StoredSessionSnapshot {
 
 ### Chrome Storage Schema
 
-| Key Pattern | Type | Purpose |
-|-------------|------|---------|
-| `last-session` | `StoredSessionSnapshot` | Last active session for restore |
-| `ws-{windowId}` | `SidePanelSession` | Per-window session state |
+| Key Pattern     | Type                    | Purpose                         |
+| --------------- | ----------------------- | ------------------------------- |
+| `last-session`  | `StoredSessionSnapshot` | Last active session for restore |
+| `ws-{windowId}` | `SidePanelSession`      | Per-window session state        |
 
 ### Tauri Commands (Rust)
 
@@ -626,10 +649,10 @@ EXTENSION_PATH=$(pwd)/.output/chrome-mv3-dev npm run test:e2e
 
 ### Test Coverage
 
-| File | Coverage | Description |
-|------|----------|-------------|
-| `url.ts` | 100% | URL validation, normalization, favicon |
-| `workspace.ts` | 100% | Session state management |
+| File           | Coverage | Description                            |
+| -------------- | -------- | -------------------------------------- |
+| `url.ts`       | 100%     | URL validation, normalization, favicon |
+| `workspace.ts` | 100%     | Session state management               |
 
 ### Manual Testing Checklist
 
@@ -658,22 +681,22 @@ export default defineConfig({
     name: 'Sidebar Max',
     version: '0.2.0',
     permissions: [
-      'tabs',           // Tab management
-      'tabGroups',      // Tab grouping
-      'storage',        // Session persistence
-      'sidePanel',      // Native side panel
-      'declarativeNetRequest',  // Header modification
-      'favicon',        // Favicon access
-      'commands',       // Keyboard shortcuts
-      'scripting',      // Script injection
-      'alarms',         // Background tasks
+      'tabs', // Tab management
+      'tabGroups', // Tab grouping
+      'storage', // Session persistence
+      'sidePanel', // Native side panel
+      'declarativeNetRequest', // Header modification
+      'favicon', // Favicon access
+      'commands', // Keyboard shortcuts
+      'scripting', // Script injection
+      'alarms', // Background tasks
     ],
     commands: {
       'toggle-panel': {
-        suggested_key: { default: 'Ctrl+Shift+Y' }
-      }
-    }
-  }
+        suggested_key: { default: 'Ctrl+Shift+Y' },
+      },
+    },
+  },
 });
 ```
 
@@ -717,7 +740,7 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
-  }
+  },
 );
 ```
 
@@ -732,6 +755,7 @@ export default tseslint.config(
 **Problem**: Extension shows "Errors" button in chrome://extensions
 
 **Solutions**:
+
 1. Check that you ran `npm install` first
 2. Ensure you're loading the correct folder (`.output/chrome-mv3-dev/`)
 3. Try `npm run build` instead of `npm run dev` for testing
@@ -742,6 +766,7 @@ export default tseslint.config(
 **Problem**: Sites show "refused to connect" or blank page
 
 **Solutions**:
+
 1. Check `public/rules.json` is being loaded
 2. Verify `declarativeNetRequest` permission is granted
 3. Some sites (Google, Facebook) block iframe embedding - this is expected
@@ -752,6 +777,7 @@ export default tseslint.config(
 **Problem**: `Ctrl+Shift+Y` doesn't toggle panel
 
 **Solutions**:
+
 1. Check if shortcut conflicts with another extension
 2. Go to `chrome://extensions/shortcuts` and verify binding
 3. Try clicking the extension icon instead
@@ -761,6 +787,7 @@ export default tseslint.config(
 **Problem**: Tabs disappear when closing/reopening window
 
 **Solutions**:
+
 1. Check that `chrome.storage.local` is available
 2. Look for errors in background service worker console
 3. Verify `storage` permission is in manifest
@@ -770,6 +797,7 @@ export default tseslint.config(
 **Problem**: `npm run tauri:build` fails
 
 **Solutions**:
+
 ```bash
 # Update Rust
 cd src-tauri && cargo update
@@ -815,6 +843,7 @@ chrome.runtime.sendMessage({ type: 'GET_SESSION', windowId: 123 });
 ## 🗺️ Roadmap
 
 ### Current Version (0.1.0)
+
 - ✅ Chrome Extension with sidePanel API
 - ✅ Tauri Desktop App
 - ✅ Session persistence
@@ -823,6 +852,7 @@ chrome.runtime.sendMessage({ type: 'GET_SESSION', windowId: 123 });
 - ✅ Frame header bypass
 
 ### Version 0.2.0 (Planned)
+
 - 🔲 Settings panel (themes, search engine selection)
 - 🔲 Draggable tab reordering
 - 🔲 Import/export sessions
@@ -830,18 +860,21 @@ chrome.runtime.sendMessage({ type: 'GET_SESSION', windowId: 123 });
 - 🔲 Pinned tabs (persist across sessions)
 
 ### Version 0.3.0 (Planned)
+
 - 🔲 Split view (two tabs side-by-side)
 - 🔲 Custom CSS injection per tab
 - 🔲 Ad blocker integration
 - 🔲 Download manager
 
 ### Version 1.0.0 (Future)
+
 - 🔲 Native Swift macOS app (per SIDEPANEL_MACOS_APP_SPECIFICATION.md)
 - 🔲 iCloud sync across devices
 - 🔲 Plugin system
 - 🔲 Password manager integration
 
 ### Long-term Vision
+
 - 🎯 Windows/Linux desktop apps
 - 🎯 Firefox extension
 - 🎯 Mobile companion app
@@ -854,6 +887,7 @@ chrome.runtime.sendMessage({ type: 'GET_SESSION', windowId: 123 });
 ### [0.1.0] - 2024
 
 #### Added
+
 - 🎉 Initial release
 - 🔶 Chrome Extension with sidePanel API integration
 - 🔷 Tauri Desktop App for macOS/Windows/Linux
@@ -869,6 +903,7 @@ chrome.runtime.sendMessage({ type: 'GET_SESSION', windowId: 123 });
 - 🧪 Comprehensive test suite (Vitest + Playwright)
 
 #### Technical
+
 - React 19.2.5 with TypeScript 6.0
 - WXT framework for extension development
 - Tauri v2 with Rust backend
@@ -905,16 +940,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND...
 
 ### Open Source Libraries
 
-| Library | Purpose | License |
-|---------|---------|---------|
-| [React](https://react.dev) | UI framework | MIT |
-| [Tauri](https://tauri.app) | Desktop app framework | MIT/Apache-2.0 |
-| [WXT](https://wxt.dev) | Extension framework | MIT |
-| [Zod](https://zod.dev) | Schema validation | MIT |
-| [Vitest](https://vitest.dev) | Unit testing | MIT |
-| [Playwright](https://playwright.dev) | E2E testing | Apache-2.0 |
-| [Vite](https://vitejs.dev) | Build tool | MIT |
-| [TypeScript](https://typescriptlang.org) | Type system | Apache-2.0 |
+| Library                                  | Purpose               | License        |
+| ---------------------------------------- | --------------------- | -------------- |
+| [React](https://react.dev)               | UI framework          | MIT            |
+| [Tauri](https://tauri.app)               | Desktop app framework | MIT/Apache-2.0 |
+| [WXT](https://wxt.dev)                   | Extension framework   | MIT            |
+| [Zod](https://zod.dev)                   | Schema validation     | MIT            |
+| [Vitest](https://vitest.dev)             | Unit testing          | MIT            |
+| [Playwright](https://playwright.dev)     | E2E testing           | Apache-2.0     |
+| [Vite](https://vitejs.dev)               | Build tool            | MIT            |
+| [TypeScript](https://typescriptlang.org) | Type system           | Apache-2.0     |
 
 ### Special Thanks
 
