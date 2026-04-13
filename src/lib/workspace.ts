@@ -27,7 +27,6 @@ export function createWorkspaceTab(
     url,
     title: overrides.title ?? getDisplayTitle(url) ?? DEFAULT_WORKSPACE_TITLE,
     faviconUrl: overrides.faviconUrl ?? null,
-    nativeTabId: overrides.nativeTabId ?? null,
     lastActiveAt: overrides.lastActiveAt ?? now(),
   };
 }
@@ -46,9 +45,7 @@ export function createSession(
     windowId,
     activeTabId,
     workspaceTabs: tabs,
-    tabGroupId: null,
     pinned: true,
-    lastError: null,
     updatedAt: now(),
   };
 }
@@ -84,10 +81,6 @@ export function removeTab(
   workspaceTabId: string,
 ): SidePanelSession {
   const nextTabs = session.workspaceTabs.filter((t) => t.id !== workspaceTabId);
-  const nextActiveId =
-    session.activeTabId === workspaceTabId
-      ? nextTabs[0]?.id ?? createWorkspaceTab(DEFAULT_WORKSPACE_START_URL).id
-      : session.activeTabId;
 
   if (nextTabs.length === 0) {
     const fallback = createWorkspaceTab(DEFAULT_WORKSPACE_START_URL);
@@ -98,6 +91,11 @@ export function removeTab(
       updatedAt: now(),
     };
   }
+
+  const nextActiveId =
+    session.activeTabId === workspaceTabId
+      ? nextTabs[0].id
+      : session.activeTabId;
 
   return {
     ...session,
@@ -119,27 +117,6 @@ export function updateTab(
     ),
     updatedAt: now(),
   };
-}
-
-export function setPinned(
-  session: SidePanelSession,
-  pinned: boolean,
-): SidePanelSession {
-  return { ...session, pinned, updatedAt: now() };
-}
-
-export function setTabGroupId(
-  session: SidePanelSession,
-  tabGroupId: number | null,
-): SidePanelSession {
-  return { ...session, tabGroupId, updatedAt: now() };
-}
-
-export function setError(
-  session: SidePanelSession,
-  error: string | null,
-): SidePanelSession {
-  return { ...session, lastError: error, updatedAt: now() };
 }
 
 export function toSnapshot(session: SidePanelSession): Record<string, StoredSessionSnapshot> {

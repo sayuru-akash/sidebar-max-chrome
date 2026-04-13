@@ -28,62 +28,70 @@ export default defineContentScript({
       ensureViewport();
     }
 
-    if (window.name.startsWith('sm-offscreen-')) {
-      function autoPlay(): void {
-        document.querySelectorAll('video').forEach((v) => {
-          try { void v.play(); } catch { /* autoplay blocked */ }
-        });
-        document.querySelectorAll('audio').forEach((a) => {
-          try { void a.play(); } catch { /* autoplay blocked */ }
-        });
-      }
-      autoPlay();
-      document.addEventListener('load', autoPlay);
-      setInterval(autoPlay, 3000);
-      return;
+    function getTabId(): string | undefined {
+      const m = window.name.match(/^sm-(?:offscreen|panel)-(.+)$/);
+      return m ? m[1] : undefined;
     }
 
-    if (window.name !== 'sm-panel') return;
-
-    let lastSyncedUrl = '';
-
-    function syncUrl(): void {
+    function syncUrl(tabId: string): void {
       const current = window.location.href;
-      if (current === lastSyncedUrl) return;
-      lastSyncedUrl = current;
       try {
         chrome.runtime.sendMessage({
           type: 'SYNC_IFRAME_URL',
           url: current,
+          tabId,
         }).catch(() => {});
       } catch {
         // extension context invalidated
       }
     }
 
-    window.addEventListener('load', syncUrl);
-    window.addEventListener('popstate', syncUrl);
-    window.addEventListener('hashchange', syncUrl);
-    document.addEventListener('click', () => setTimeout(syncUrl, 100), true);
-
-    if ('navigation' in window) {
-      try {
-        (window as unknown as { navigation: EventTarget }).navigation.addEventListener('navigate', () => setTimeout(syncUrl, 50));
-      } catch { /* Navigation API not available */ }
+    function autoPlay(): void {
+      document.querySelectorAll('video').forEach((v) => {
+        try { void v.play(); } catch { /* autoplay blocked */ }
+      });
+      document.querySelectorAll('audio').forEach((a) => {
+        try { void a.play(); } catch { /* autoplay blocked */ }
+      });
     }
+
+    const tabId = getTabId();
+    if (!tabId) return;
+
+    const isOffscreen = window.name.startsWith('sm-offscreen-');
+
+    if (isOffscreen) {
+      autoPlay();
+      document.addEventListener('load', autoPlay);
+      setInterval(autoPlay, 3000);
+    }
+
+    let lastSyncedUrl = '';
+
+    function syncIfChanged(): void {
+      const current = window.location.href;
+      if (current === lastSyncedUrl) return;
+      lastSyncedUrl = current;
+      syncUrl(tabId);
+    }
+
+    window.addEventListener('load', syncIfChanged);
+    window.addEventListener('popstate', syncIfChanged);
+    window.addEventListener('hashchange', syncIfChanged);
+    document.addEventListener('click', () => setTimeout(syncIfChanged, 100), true);
 
     const origPush = history.pushState.bind(history);
     history.pushState = function (...args: Parameters<typeof history.pushState>) {
       origPush(...args);
-      setTimeout(syncUrl, 50);
+      setTimeout(syncIfChanged, 50);
     };
 
     const origReplace = history.replaceState.bind(history);
     history.replaceState = function (...args: Parameters<typeof history.replaceState>) {
       origReplace(...args);
-      setTimeout(syncUrl, 50);
+      setTimeout(syncIfChanged, 50);
     };
 
-    setInterval(syncUrl, 500);
+    setInterval(syncIfChanged, 1000);
   },
 });

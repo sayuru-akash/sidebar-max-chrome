@@ -18,8 +18,6 @@ import {
   CloseIcon,
   PlusIcon,
   SearchIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
   RefreshIcon,
 } from './icons';
 
@@ -43,10 +41,8 @@ export function SidePanel() {
   const [session, setSession] = useState<SidePanelSession | null>(null);
   const [addressValue, setAddressValue] = useState('');
   const [iframeLoaded, setIframeLoaded] = useState(false);
-  const [iframeError, setIframeError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTabIdRef = useRef<string | undefined>(undefined);
-  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     void send({ type: 'PANEL_READY' }).then((res) => {
@@ -76,34 +72,13 @@ export function SidePanel() {
     if (activeTab && activeTab.id !== currentTabIdRef.current) {
       currentTabIdRef.current = activeTab.id;
       setAddressValue(activeTab.url);
-      setIframeError(false);
       setIframeLoaded(false);
     }
   }, [activeTab]);
 
-  // Poll iframe URL for cross-origin navigation detection
   useEffect(() => {
-    if (pollRef.current) window.clearInterval(pollRef.current);
-    if (!activeTab) return;
-
-    pollRef.current = window.setInterval(() => {
-      try {
-        const loc = iframeRef.current?.contentWindow?.location;
-        if (loc && loc.href !== 'about:blank') {
-          const currentUrl = loc.href;
-          if (activeTab && currentUrl !== activeTab.url) {
-            void send({ type: 'SYNC_IFRAME_URL', url: currentUrl });
-          }
-        }
-      } catch {
-        // cross-origin - content script handles it
-      }
-    }, 1000);
-
-    return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
-    };
-  }, [activeTab]);
+    if (activeTab) setAddressValue(activeTab.url);
+  }, [activeTab?.url]);
 
   const windowId = session?.windowId ?? 0;
 
@@ -139,57 +114,15 @@ export function SidePanel() {
     [windowId],
   );
 
-  const handleBack = useCallback(async () => {
-    if (!activeTab) return;
-    await send({ type: 'GO_BACK', windowId, workspaceTabId: activeTab.id });
-  }, [activeTab, windowId]);
-
-  const handleForward = useCallback(async () => {
-    if (!activeTab) return;
-    await send({ type: 'GO_FORWARD', windowId, workspaceTabId: activeTab.id });
-  }, [activeTab, windowId]);
-
-  const handleReload = useCallback(async () => {
+  const handleReload = useCallback(() => {
     if (!activeTab) return;
     setIframeLoaded(false);
-    await send({ type: 'RELOAD', windowId, workspaceTabId: activeTab.id });
-  }, [activeTab, windowId]);
+    if (iframeRef.current) {
+      iframeRef.current.src = activeTab.url;
+    }
+  }, [activeTab]);
 
   const handleIframeLoad = useCallback(() => {
-    setIframeLoaded(true);
-    setIframeError(false);
-
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc) return;
-      const viewport = 'width=device-width, initial-scale=1, maximum-scale=5';
-      let meta = doc.querySelector('meta[name="viewport"]');
-      if (!meta) {
-        meta = doc.createElement('meta');
-        meta.setAttribute('name', 'viewport');
-        (doc.head || doc.documentElement).prepend(meta);
-      }
-      meta.setAttribute('content', viewport);
-    } catch {
-      // cross-origin — content script handles it
-    }
-
-    // Try to grab the actual URL after load (same-origin)
-    try {
-      const loc = iframe.contentWindow?.location;
-      if (loc && loc.href !== 'about:blank') {
-        void send({ type: 'SYNC_IFRAME_URL', url: loc.href });
-      }
-    } catch {
-      // cross-origin
-    }
-  }, []);
-
-  const handleIframeError = useCallback(() => {
-    setIframeError(true);
     setIframeLoaded(true);
   }, []);
 
@@ -209,12 +142,6 @@ export function SidePanel() {
       <header className="sm__toolbar">
         <div className="sm__toolbar-row">
           <div className="sm__nav-buttons">
-            <button className="sm__icon-btn" onClick={() => void handleBack()} title="Back" type="button">
-              <ArrowLeftIcon className="sm__icon" />
-            </button>
-            <button className="sm__icon-btn" onClick={() => void handleForward()} title="Forward" type="button">
-              <ArrowRightIcon className="sm__icon" />
-            </button>
             <button className="sm__icon-btn" onClick={() => void handleReload()} title="Reload" type="button">
               <RefreshIcon className="sm__icon" />
             </button>
@@ -283,31 +210,16 @@ export function SidePanel() {
             <div className="sm__spinner" />
           </div>
         )}
-        {iframeError && (
-          <div className="sm__viewer-error">
-            <p>This page cannot be displayed in the sidebar.</p>
-            <p className="sm__viewer-error-hint">
-              The site may use frame-busting techniques.
-            </p>
-          </div>
-        )}
         <iframe
           ref={iframeRef}
-          name="sm-panel"
+          name={`sm-panel-${activeTab.id}`}
           key={activeTab.id}
           src={activeTab.url}
           className="sm__iframe"
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
           onLoad={handleIframeLoad}
-          onError={handleIframeError}
         />
       </div>
-
-      {session.lastError && (
-        <div className="sm__error" role="alert">
-          {session.lastError}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import {
   DEFAULT_WORKSPACE_START_URL,
-  TAB_GROUP_TITLE,
   TOGGLE_COMMAND,
   SESSION_SYNC_DEBOUNCE_MS,
 } from '../lib/constants';
@@ -24,39 +23,11 @@ import {
   createSession,
   createWorkspaceTab,
   removeTab,
-  setError,
-  setTabGroupId,
   toSnapshot,
   updateTab,
 } from '../lib/workspace';
 
 type RuntimeSender = chrome.runtime.MessageSender;
-
-async function makePersistentTab(tabId: number): Promise<void> {
-  try {
-    await chrome.tabs.update(tabId, { autoDiscardable: false });
-  } catch {
-    // tab might not exist yet briefly
-  }
-}
-
-async function injectMediaPlay(tabId: number): Promise<void> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        document.querySelectorAll('video').forEach((v) => {
-          try { void v.play(); } catch { /* autoplay blocked */ }
-        });
-        document.querySelectorAll('audio').forEach((a) => {
-          try { void a.play(); } catch { /* autoplay blocked */ }
-        });
-      },
-    });
-  } catch {
-    // tab not ready or no permission
-  }
-}
 
 export class SidePanelController {
   private readonly initPromise: Promise<void>;
@@ -78,7 +49,6 @@ export class SidePanelController {
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === this.keepAliveAlarm) {
         void this.persistAll();
-        void this.keepAliveMedia();
         this.syncOffscreen();
       }
     });
@@ -97,14 +67,6 @@ export class SidePanelController {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       void this.handleMessage(message, sender).then(sendResponse);
       return true;
-    });
-
-    chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-      this.onTabUpdated(tabId, info as { url?: string; title?: string; favIconUrl?: string; discarded?: boolean }, tab);
-    });
-
-    chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-      this.onTabRemoved(tabId, removeInfo.windowId);
     });
 
     chrome.windows.onRemoved.addListener((windowId) => {
@@ -157,24 +119,6 @@ export class SidePanelController {
     }
   }
 
-  private async keepAliveMedia(): Promise<void> {
-    for (const session of this.sessions.values()) {
-      for (const wsTab of session.workspaceTabs) {
-        if (wsTab.nativeTabId == null) continue;
-        try {
-          const tab = await chrome.tabs.get(wsTab.nativeTabId);
-          if (tab.discarded) {
-            await chrome.tabs.reload(wsTab.nativeTabId);
-          } else {
-            await injectMediaPlay(wsTab.nativeTabId);
-          }
-        } catch {
-          // dead tab
-        }
-      }
-    }
-  }
-
   private sendToPanel(windowId: number, event: PanelEvent): void {
     chrome.runtime.sendMessage(event).catch(() => {});
   }
@@ -194,7 +138,6 @@ export class SidePanelController {
       });
       this.offscreenReady = true;
     } catch {
-      // offscreen doc creation failed or already exists
       this.offscreenReady = true;
     }
   }
@@ -213,63 +156,6 @@ export class SidePanelController {
         tabs: allTabs,
       }).catch(() => { this.offscreenReady = false; });
     });
-  }
-
-  private closeOffscreenTab(tabId: string): void {
-    chrome.runtime.sendMessage({
-      target: 'offscreen',
-      type: 'OFFSCREEN_CLOSE',
-      tabId,
-    }).catch(() => {});
-  }
-
-  private async syncTabGroup(session: SidePanelSession): Promise<SidePanelSession> {
-    const nativeTabIds = session.workspaceTabs
-      .map((t) => t.nativeTabId)
-      .filter((id): id is number => id !== null);
-
-    if (nativeTabIds.length === 0) return session;
-
-    let groupId = session.tabGroupId;
-
-    if (groupId !== null) {
-      try {
-        await chrome.tabGroups.get(groupId);
-      } catch {
-        groupId = null;
-      }
-    }
-
-    if (groupId === null) {
-      groupId = await chrome.tabs.group({ tabIds: nativeTabIds, createProperties: { windowId: session.windowId } });
-      try {
-        await chrome.tabGroups.update(groupId, {
-          title: TAB_GROUP_TITLE,
-          collapsed: false,
-          color: 'blue',
-        });
-      } catch {
-        // non-critical
-      }
-      return setTabGroupId(session, groupId);
-    }
-
-    try {
-      await chrome.tabs.group({ groupId, tabIds: nativeTabIds });
-    } catch {
-      groupId = await chrome.tabs.group({ tabIds: nativeTabIds, createProperties: { windowId: session.windowId } });
-      try {
-        await chrome.tabGroups.update(groupId, {
-          title: TAB_GROUP_TITLE,
-          collapsed: false,
-          color: 'blue',
-        });
-      } catch {
-        // non-critical
-      }
-      return setTabGroupId(session, groupId);
-    }
-    return session;
   }
 
   private async resolveWindowId(sender: RuntimeSender): Promise<number | null> {
@@ -313,16 +199,14 @@ export class SidePanelController {
         return { ok: false, error: 'Cannot determine window.' };
       }
 
-      let session = await this.getOrCreateSession(windowId);
-      session = await this.ensureAllBackingTabs(windowId, session);
-      session = await this.syncTabGroup(session);
+      const session = await this.getOrCreateSession(windowId);
       this.sessions.set(windowId, session);
       await saveWindowSession(session);
       return { ok: true, session };
     }
 
     if (req.type === 'SYNC_IFRAME_URL') {
-      await this.onIframeUrlChanged(req.url);
+      this.onIframeUrlChanged(req.url, req.tabId);
       return { ok: true };
     }
 
@@ -345,21 +229,9 @@ export class SidePanelController {
           ? normalizeAddressInput(rawInput).url
           : DEFAULT_WORKSPACE_START_URL;
 
-        const bgTab = await chrome.tabs.create({
-          windowId: session.windowId,
-          url,
-          active: false,
-        });
-        if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
-
-        const wsTab = createWorkspaceTab(url, {
-          nativeTabId: bgTab.id ?? null,
-          title: bgTab.title ?? getDisplayTitle(url),
-          faviconUrl: bgTab.favIconUrl ?? getFaviconUrl(url),
-        });
-        let next = addTab(session, wsTab);
-        next = await this.syncTabGroup(next);
-        this.setSession(req.windowId, setError(next, null));
+        const wsTab = createWorkspaceTab(url);
+        const next = addTab(session, wsTab);
+        this.setSession(req.windowId, next);
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
       }
 
@@ -369,25 +241,12 @@ export class SidePanelController {
 
         const { url } = normalizeAddressInput(req.input);
 
-        if (target.nativeTabId != null) {
-          await chrome.tabs.update(target.nativeTabId, { url });
-        } else {
-          const bgTab = await chrome.tabs.create({
-            windowId: session.windowId,
-            url,
-            active: false,
-          });
-          if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
-          const patched = updateTab(session, target.id, { nativeTabId: bgTab.id ?? null });
-          this.sessions.set(req.windowId, patched);
-        }
-
         const updated = updateTab(
-          this.sessions.get(req.windowId) as SidePanelSession,
+          session,
           target.id,
           { url, title: getDisplayTitle(url), faviconUrl: getFaviconUrl(url) },
         );
-        this.setSession(req.windowId, setError(updated, null));
+        this.setSession(req.windowId, updated);
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
       }
 
@@ -397,193 +256,43 @@ export class SidePanelController {
         return { ok: true, session: next };
       }
 
-      case 'VIEW_TAB': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (!target) return { ok: false, error: 'Tab not found.' };
-        if (target.nativeTabId != null) {
-          try {
-            const tabGroup = await chrome.tabGroups.get(session.tabGroupId ?? -1).catch(() => null);
-            if (tabGroup) {
-              await chrome.tabGroups.update(tabGroup.id, { collapsed: false });
-            }
-            await chrome.tabs.update(target.nativeTabId, { active: true });
-          } catch {
-            // ignore
-          }
-        }
-        return { ok: true, session };
-      }
-
       case 'CLOSE_TAB': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId != null) {
-          try {
-            await chrome.tabs.remove(target.nativeTabId);
-          } catch {
-            // already closed
-          }
-        }
-        let next = removeTab(session, req.workspaceTabId);
-        next = await this.syncTabGroup(next);
-        this.setSession(req.windowId, setError(next, null));
+        const next = removeTab(session, req.workspaceTabId);
+        this.setSession(req.windowId, next);
         return { ok: true, session: this.sessions.get(req.windowId) as SidePanelSession };
       }
 
-      case 'GO_BACK': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId != null) {
-          try { await chrome.tabs.goBack(target.nativeTabId); } catch { /* ignore */ }
-        }
+      case 'GO_BACK':
+      case 'GO_FORWARD':
+      case 'RELOAD':
         return { ok: true, session };
-      }
-
-      case 'GO_FORWARD': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId != null) {
-          try { await chrome.tabs.goForward(target.nativeTabId); } catch { /* ignore */ }
-        }
-        return { ok: true, session };
-      }
-
-      case 'RELOAD': {
-        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
-        if (target?.nativeTabId != null) {
-          await chrome.tabs.reload(target.nativeTabId);
-        }
-        return { ok: true, session };
-      }
 
       default:
         return { ok: false, error: 'Unhandled.' };
     }
   }
 
-  private async onIframeUrlChanged(newUrl: string): Promise<void> {
+  private onIframeUrlChanged(newUrl: string, tabId?: string): void {
     for (const [windowId, session] of this.sessions) {
-      const active = session.workspaceTabs.find((t) => t.id === session.activeTabId);
-      if (!active || active.url === newUrl) continue;
+      const target = tabId
+        ? session.workspaceTabs.find((t) => t.id === tabId)
+        : session.workspaceTabs.find((t) => t.id === session.activeTabId);
 
-      const next = updateTab(session, active.id, {
+      if (!target || target.url === newUrl) continue;
+
+      const next = updateTab(session, target.id, {
         url: newUrl,
         title: getDisplayTitle(newUrl),
         faviconUrl: getFaviconUrl(newUrl),
       });
       this.setSession(windowId, next);
-
-      if (active.nativeTabId != null) {
-        try {
-          const bgTab = await chrome.tabs.get(active.nativeTabId);
-          if (bgTab.url !== newUrl) {
-            await chrome.tabs.update(active.nativeTabId, { url: newUrl });
-            chrome.tabs.onUpdated.addListener(function listener(tid, info) {
-              if (tid === active.nativeTabId && info.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                void injectMediaPlay(active.nativeTabId);
-              }
-            });
-          }
-        } catch {
-          // dead tab
-        }
-      }
       break;
     }
-  }
-
-  private async ensureAllBackingTabs(
-    windowId: number,
-    session: SidePanelSession,
-  ): Promise<SidePanelSession> {
-    let current = session;
-    for (const wsTab of current.workspaceTabs) {
-      if (wsTab.nativeTabId != null) {
-        try {
-          const existing = await chrome.tabs.get(wsTab.nativeTabId);
-          await makePersistentTab(existing.id!);
-
-          // If the tab was discarded, reload it
-          if (existing.discarded) {
-            await chrome.tabs.reload(existing.id!);
-          }
-
-          const syncUpdate: { url?: string; title?: string; faviconUrl?: string } = {};
-          if (existing.url && existing.url !== wsTab.url) syncUpdate.url = existing.url;
-          if (existing.title && existing.title !== wsTab.title) syncUpdate.title = existing.title;
-          if (existing.favIconUrl && existing.favIconUrl !== wsTab.faviconUrl) syncUpdate.faviconUrl = existing.favIconUrl;
-          if (Object.keys(syncUpdate).length > 0) {
-            current = updateTab(current, wsTab.id, syncUpdate);
-          }
-          continue;
-        } catch {
-          // dead tab, recreate below
-        }
-      }
-
-      const bgTab = await chrome.tabs.create({
-        windowId,
-        url: wsTab.url,
-        active: false,
-      });
-      if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
-      current = updateTab(current, wsTab.id, {
-        nativeTabId: bgTab.id ?? null,
-        title: bgTab.title ?? wsTab.title,
-        faviconUrl: bgTab.favIconUrl ?? wsTab.faviconUrl,
-      });
-    }
-    return current;
-  }
-
-  private onTabUpdated(
-    tabId: number,
-    info: { url?: string; title?: string; favIconUrl?: string; discarded?: boolean },
-    tab: chrome.tabs.Tab,
-  ): void {
-    if (tab.windowId === undefined) return;
-
-    const session = this.sessions.get(tab.windowId);
-    if (!session) return;
-
-    const wsTab = session.workspaceTabs.find((t) => t.nativeTabId === tabId);
-    if (!wsTab) return;
-
-    // If tab was discarded, immediately reload it
-    if (info.discarded) {
-      void chrome.tabs.reload(tabId);
-      return;
-    }
-
-    const updates: { url?: string; title?: string; faviconUrl?: string } = {};
-    if (info.url) updates.url = info.url;
-    if (info.title) updates.title = info.title;
-    if (info.favIconUrl) updates.faviconUrl = info.favIconUrl;
-
-    if (Object.keys(updates).length > 0) {
-      const next = updateTab(session, wsTab.id, updates);
-      this.setSession(tab.windowId, next);
-    }
-  }
-
-  private onTabRemoved(tabId: number, windowId: number): void {
-    const session = this.sessions.get(windowId);
-    if (!session) return;
-
-    const wsTab = session.workspaceTabs.find((t) => t.nativeTabId === tabId);
-    if (!wsTab) return;
-
-    const next = removeTab(session, wsTab.id);
-    this.setSession(windowId, setError(next, null));
   }
 
   private async onWindowRemoved(windowId: number): Promise<void> {
     const session = this.sessions.get(windowId);
     if (!session) return;
-
-    for (const wsTab of session.workspaceTabs) {
-      if (wsTab.nativeTabId != null) {
-        try { await chrome.tabs.remove(wsTab.nativeTabId); } catch { /* ignore */ }
-      }
-    }
 
     await this.persistSnapshot(session);
     this.sessions.delete(windowId);

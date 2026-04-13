@@ -5,7 +5,6 @@ export const WorkspaceTabSchema = z.object({
   url: z.string().min(1),
   title: z.string(),
   faviconUrl: z.string().nullable(),
-  nativeTabId: z.number().int().nullable(),
   lastActiveAt: z.number().int().nonnegative(),
 });
 
@@ -13,9 +12,7 @@ export const SidePanelSessionSchema = z.object({
   windowId: z.number().int().nonnegative(),
   activeTabId: z.string().min(1),
   workspaceTabs: z.array(WorkspaceTabSchema).min(0),
-  tabGroupId: z.number().int().nullable(),
   pinned: z.boolean(),
-  lastError: z.string().nullable(),
   updatedAt: z.number().int().nonnegative(),
 });
 
@@ -68,12 +65,6 @@ export const ReloadMessageSchema = z.object({
   workspaceTabId: z.string().min(1),
 });
 
-export const SetPinnedMessageSchema = z.object({
-  type: z.literal('SET_PINNED'),
-  windowId: z.number().int().nonnegative(),
-  pinned: z.boolean(),
-});
-
 export const GetSessionMessageSchema = z.object({
   type: z.literal('GET_SESSION'),
   windowId: z.number().int().nonnegative(),
@@ -83,15 +74,10 @@ export const PanelReadyMessageSchema = z.object({
   type: z.literal('PANEL_READY'),
 });
 
-export const ViewTabMessageSchema = z.object({
-  type: z.literal('VIEW_TAB'),
-  windowId: z.number().int().nonnegative(),
-  workspaceTabId: z.string().min(1),
-});
-
 export const SyncIframeUrlMessageSchema = z.object({
   type: z.literal('SYNC_IFRAME_URL'),
   url: z.string().min(1),
+  tabId: z.string().optional(),
 });
 
 export const PanelRequestSchema = z.discriminatedUnion('type', [
@@ -99,11 +85,9 @@ export const PanelRequestSchema = z.discriminatedUnion('type', [
   CreateTabMessageSchema,
   CloseTabMessageSchema,
   ActivateTabMessageSchema,
-  ViewTabMessageSchema,
   GoBackMessageSchema,
   GoForwardMessageSchema,
   ReloadMessageSchema,
-  SetPinnedMessageSchema,
   GetSessionMessageSchema,
   PanelReadyMessageSchema,
   SyncIframeUrlMessageSchema,
