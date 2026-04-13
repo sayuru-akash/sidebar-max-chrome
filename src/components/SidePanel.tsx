@@ -45,8 +45,8 @@ export function SidePanel() {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [iframeError, setIframeError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const navHistory = useRef<Map<string, string[]>>(new Map());
   const currentTabIdRef = useRef<string | undefined>(undefined);
+  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     void send({ type: 'PANEL_READY' }).then((res) => {
@@ -81,16 +81,36 @@ export function SidePanel() {
     }
   }, [activeTab]);
 
+  // Poll iframe URL for cross-origin navigation detection
+  useEffect(() => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    if (!activeTab) return;
+
+    pollRef.current = window.setInterval(() => {
+      try {
+        const loc = iframeRef.current?.contentWindow?.location;
+        if (loc && loc.href !== 'about:blank') {
+          const currentUrl = loc.href;
+          if (activeTab && currentUrl !== activeTab.url) {
+            void send({ type: 'SYNC_IFRAME_URL', url: currentUrl });
+          }
+        }
+      } catch {
+        // cross-origin - content script handles it
+      }
+    }, 1000);
+
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+  }, [activeTab]);
+
   const windowId = session?.windowId ?? 0;
 
   const handleNavigate = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!activeTab || !addressValue.trim()) return;
-
-      const history = navHistory.current.get(activeTab.id) ?? [];
-      navHistory.current.set(activeTab.id, [...history, activeTab.url]);
-
       await send({
         type: 'NAVIGATE_TAB',
         windowId,
@@ -155,6 +175,16 @@ export function SidePanel() {
       meta.setAttribute('content', viewport);
     } catch {
       // cross-origin — content script handles it
+    }
+
+    // Try to grab the actual URL after load (same-origin)
+    try {
+      const loc = iframe.contentWindow?.location;
+      if (loc && loc.href !== 'about:blank') {
+        void send({ type: 'SYNC_IFRAME_URL', url: loc.href });
+      }
+    } catch {
+      // cross-origin
     }
   }, []);
 
@@ -263,6 +293,7 @@ export function SidePanel() {
         )}
         <iframe
           ref={iframeRef}
+          name="sm-panel"
           key={activeTab.id}
           src={activeTab.url}
           className="sm__iframe"

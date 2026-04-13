@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['.output/**', '.wxt/**', 'coverage/**'],
+    ignores: ['.output/**', '.wxt/**', 'coverage/**', 'dist-app/**', 'src-app/**', 'src-tauri/**', 'vite.app.config.ts'],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],

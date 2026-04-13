@@ -10,7 +10,13 @@ import {
   type PanelResponse,
   type SidePanelSession,
 } from '../lib/schema';
-import { loadSessionSnapshot, saveSessionSnapshot, saveWindowSession } from '../lib/storage';
+import {
+  loadAllWindowSessions,
+  loadSessionSnapshot,
+  removeWindowSession,
+  saveSessionSnapshot,
+  saveWindowSession,
+} from '../lib/storage';
 import { getDisplayTitle, getFaviconUrl, normalizeAddressInput } from '../lib/url';
 import {
   activateTab,
@@ -26,11 +32,20 @@ import {
 
 type RuntimeSender = chrome.runtime.MessageSender;
 
+async function makePersistentTab(tabId: number): Promise<void> {
+  try {
+    await chrome.tabs.update(tabId, { autoDiscardable: false });
+  } catch {
+    // tab might not exist yet briefly
+  }
+}
+
 export class SidePanelController {
   private readonly initPromise: Promise<void>;
   private sessions = new Map<number, SidePanelSession>();
   private persistTimer: number | null = null;
   private snapshot: Awaited<ReturnType<typeof loadSessionSnapshot>> = null;
+  private keepAliveAlarm = 'sm-keepalive';
 
   constructor() {
     this.initPromise = this.initialize();
@@ -40,6 +55,13 @@ export class SidePanelController {
     await this.initPromise;
 
     void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm.name === this.keepAliveAlarm) {
+        void this.persistAll();
+      }
+    });
+    void chrome.alarms.create(this.keepAliveAlarm, { periodInMinutes: 0.4 });
 
     chrome.commands.onCommand.addListener((command) => {
       if (command === TOGGLE_COMMAND) {
@@ -57,7 +79,7 @@ export class SidePanelController {
     });
 
     chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-      this.onTabUpdated(tabId, info as { url?: string; title?: string; favIconUrl?: string }, tab);
+      this.onTabUpdated(tabId, info as { url?: string; title?: string; favIconUrl?: string; discarded?: boolean }, tab);
     });
 
     chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
@@ -70,7 +92,14 @@ export class SidePanelController {
   }
 
   private async initialize(): Promise<void> {
-    this.snapshot = await loadSessionSnapshot();
+    const [snapshot, storedSessions] = await Promise.all([
+      loadSessionSnapshot(),
+      loadAllWindowSessions(),
+    ]);
+    this.snapshot = snapshot;
+    for (const session of storedSessions) {
+      this.sessions.set(session.windowId, session);
+    }
   }
 
   private setSession(windowId: number, session: SidePanelSession): void {
@@ -107,9 +136,7 @@ export class SidePanelController {
   }
 
   private sendToPanel(windowId: number, event: PanelEvent): void {
-    chrome.runtime.sendMessage(event).catch(() => {
-      // panel not open
-    });
+    chrome.runtime.sendMessage(event).catch(() => {});
   }
 
   private async syncTabGroup(session: SidePanelSession): Promise<SidePanelSession> {
@@ -143,7 +170,21 @@ export class SidePanelController {
       return setTabGroupId(session, groupId);
     }
 
-    await chrome.tabs.group({ groupId, tabIds: nativeTabIds });
+    try {
+      await chrome.tabs.group({ groupId, tabIds: nativeTabIds });
+    } catch {
+      groupId = await chrome.tabs.group({ tabIds: nativeTabIds, createProperties: { windowId: session.windowId } });
+      try {
+        await chrome.tabGroups.update(groupId, {
+          title: TAB_GROUP_TITLE,
+          collapsed: true,
+          color: 'blue',
+        });
+      } catch {
+        // non-critical
+      }
+      return setTabGroupId(session, groupId);
+    }
     return session;
   }
 
@@ -157,6 +198,16 @@ export class SidePanelController {
     } catch {
       return null;
     }
+  }
+
+  private async getOrCreateSession(windowId: number): Promise<SidePanelSession> {
+    let session = this.sessions.get(windowId) ?? null;
+    if (session) return session;
+
+    session = createSession(windowId, this.snapshot);
+    this.sessions.set(windowId, session);
+    await saveWindowSession(session);
+    return session;
   }
 
   private async handleMessage(
@@ -178,17 +229,17 @@ export class SidePanelController {
         return { ok: false, error: 'Cannot determine window.' };
       }
 
-      let session = this.sessions.get(windowId) ?? null;
-      if (!session) {
-        session = createSession(windowId, this.snapshot);
-        this.sessions.set(windowId, session);
-      }
-
+      let session = await this.getOrCreateSession(windowId);
       session = await this.ensureAllBackingTabs(windowId, session);
       session = await this.syncTabGroup(session);
       this.sessions.set(windowId, session);
       await saveWindowSession(session);
       return { ok: true, session };
+    }
+
+    if (req.type === 'SYNC_IFRAME_URL') {
+      await this.onIframeUrlChanged(req.url);
+      return { ok: true };
     }
 
     if (req.type === 'GET_SESSION') {
@@ -215,6 +266,7 @@ export class SidePanelController {
           url,
           active: false,
         });
+        if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
 
         const wsTab = createWorkspaceTab(url, {
           nativeTabId: bgTab.id ?? null,
@@ -241,6 +293,7 @@ export class SidePanelController {
             url,
             active: false,
           });
+          if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
           const patched = updateTab(session, target.id, { nativeTabId: bgTab.id ?? null });
           this.sessions.set(req.windowId, patched);
         }
@@ -258,6 +311,23 @@ export class SidePanelController {
         const next = activateTab(session, req.workspaceTabId);
         this.setSession(req.windowId, next);
         return { ok: true, session: next };
+      }
+
+      case 'VIEW_TAB': {
+        const target = session.workspaceTabs.find((t) => t.id === req.workspaceTabId);
+        if (!target) return { ok: false, error: 'Tab not found.' };
+        if (target.nativeTabId != null) {
+          try {
+            const tabGroup = await chrome.tabGroups.get(session.tabGroupId ?? -1).catch(() => null);
+            if (tabGroup) {
+              await chrome.tabGroups.update(tabGroup.id, { collapsed: false });
+            }
+            await chrome.tabs.update(target.nativeTabId, { active: true });
+          } catch {
+            // ignore
+          }
+        }
+        return { ok: true, session };
       }
 
       case 'CLOSE_TAB': {
@@ -304,6 +374,32 @@ export class SidePanelController {
     }
   }
 
+  private async onIframeUrlChanged(newUrl: string): Promise<void> {
+    for (const [windowId, session] of this.sessions) {
+      const active = session.workspaceTabs.find((t) => t.id === session.activeTabId);
+      if (!active || active.url === newUrl) continue;
+
+      const next = updateTab(session, active.id, {
+        url: newUrl,
+        title: getDisplayTitle(newUrl),
+        faviconUrl: getFaviconUrl(newUrl),
+      });
+      this.setSession(windowId, next);
+
+      if (active.nativeTabId != null) {
+        try {
+          const bgTab = await chrome.tabs.get(active.nativeTabId);
+          if (bgTab.url !== newUrl) {
+            await chrome.tabs.update(active.nativeTabId, { url: newUrl });
+          }
+        } catch {
+          // dead tab
+        }
+      }
+      break;
+    }
+  }
+
   private async ensureAllBackingTabs(
     windowId: number,
     session: SidePanelSession,
@@ -312,10 +408,24 @@ export class SidePanelController {
     for (const wsTab of current.workspaceTabs) {
       if (wsTab.nativeTabId != null) {
         try {
-          await chrome.tabs.get(wsTab.nativeTabId);
+          const existing = await chrome.tabs.get(wsTab.nativeTabId);
+          await makePersistentTab(existing.id!);
+
+          // If the tab was discarded, reload it
+          if (existing.discarded) {
+            await chrome.tabs.reload(existing.id!);
+          }
+
+          const syncUpdate: { url?: string; title?: string; faviconUrl?: string } = {};
+          if (existing.url && existing.url !== wsTab.url) syncUpdate.url = existing.url;
+          if (existing.title && existing.title !== wsTab.title) syncUpdate.title = existing.title;
+          if (existing.favIconUrl && existing.favIconUrl !== wsTab.faviconUrl) syncUpdate.faviconUrl = existing.favIconUrl;
+          if (Object.keys(syncUpdate).length > 0) {
+            current = updateTab(current, wsTab.id, syncUpdate);
+          }
           continue;
         } catch {
-          // dead tab, recreate
+          // dead tab, recreate below
         }
       }
 
@@ -324,6 +434,7 @@ export class SidePanelController {
         url: wsTab.url,
         active: false,
       });
+      if (bgTab.id !== undefined) await makePersistentTab(bgTab.id);
       current = updateTab(current, wsTab.id, {
         nativeTabId: bgTab.id ?? null,
         title: bgTab.title ?? wsTab.title,
@@ -335,7 +446,7 @@ export class SidePanelController {
 
   private onTabUpdated(
     tabId: number,
-    info: { url?: string; title?: string; favIconUrl?: string },
+    info: { url?: string; title?: string; favIconUrl?: string; discarded?: boolean },
     tab: chrome.tabs.Tab,
   ): void {
     if (tab.windowId === undefined) return;
@@ -345,6 +456,12 @@ export class SidePanelController {
 
     const wsTab = session.workspaceTabs.find((t) => t.nativeTabId === tabId);
     if (!wsTab) return;
+
+    // If tab was discarded, immediately reload it
+    if (info.discarded) {
+      void chrome.tabs.reload(tabId);
+      return;
+    }
 
     const updates: { url?: string; title?: string; faviconUrl?: string } = {};
     if (info.url) updates.url = info.url;
@@ -371,7 +488,15 @@ export class SidePanelController {
   private async onWindowRemoved(windowId: number): Promise<void> {
     const session = this.sessions.get(windowId);
     if (!session) return;
+
+    for (const wsTab of session.workspaceTabs) {
+      if (wsTab.nativeTabId != null) {
+        try { await chrome.tabs.remove(wsTab.nativeTabId); } catch { /* ignore */ }
+      }
+    }
+
     await this.persistSnapshot(session);
     this.sessions.delete(windowId);
+    await removeWindowSession(windowId);
   }
 }

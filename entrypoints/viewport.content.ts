@@ -27,5 +27,36 @@ export default defineContentScript({
     } else {
       ensureViewport();
     }
+
+    if (window.name !== 'sm-panel') return;
+
+    function syncUrl(): void {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'SYNC_IFRAME_URL',
+          url: window.location.href,
+        }).catch(() => {});
+      } catch {
+        // extension context invalidated
+      }
+    }
+
+    window.addEventListener('load', syncUrl);
+    window.addEventListener('popstate', syncUrl);
+    window.addEventListener('hashchange', syncUrl);
+
+    const origPush = history.pushState.bind(history);
+    history.pushState = function (...args: Parameters<typeof history.pushState>) {
+      origPush(...args);
+      setTimeout(syncUrl, 50);
+    };
+
+    const origReplace = history.replaceState.bind(history);
+    history.replaceState = function (...args: Parameters<typeof history.replaceState>) {
+      origReplace(...args);
+      setTimeout(syncUrl, 50);
+    };
+
+    setInterval(syncUrl, 2000);
   },
 });

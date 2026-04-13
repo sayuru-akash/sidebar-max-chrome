@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const WorkspaceTabSchema = z.object({
   id: z.string().min(1),
   url: z.string().min(1),
-  title: z.string().min(1),
+  title: z.string(),
   faviconUrl: z.string().nullable(),
   nativeTabId: z.number().int().nullable(),
   lastActiveAt: z.number().int().nonnegative(),
@@ -83,17 +83,30 @@ export const PanelReadyMessageSchema = z.object({
   type: z.literal('PANEL_READY'),
 });
 
+export const ViewTabMessageSchema = z.object({
+  type: z.literal('VIEW_TAB'),
+  windowId: z.number().int().nonnegative(),
+  workspaceTabId: z.string().min(1),
+});
+
+export const SyncIframeUrlMessageSchema = z.object({
+  type: z.literal('SYNC_IFRAME_URL'),
+  url: z.string().min(1),
+});
+
 export const PanelRequestSchema = z.discriminatedUnion('type', [
   NavigateTabMessageSchema,
   CreateTabMessageSchema,
   CloseTabMessageSchema,
   ActivateTabMessageSchema,
+  ViewTabMessageSchema,
   GoBackMessageSchema,
   GoForwardMessageSchema,
   ReloadMessageSchema,
   SetPinnedMessageSchema,
   GetSessionMessageSchema,
   PanelReadyMessageSchema,
+  SyncIframeUrlMessageSchema,
 ]);
 
 export const SessionUpdatedEventSchema = z.object({

@@ -1,7 +1,12 @@
 node_modules
 .output
 .wxt
+dist-app
 coverage
 playwright-report
 test-results
-pnpm-lock.yaml
+
+.DS_Store
+
+src-tauri/target
+src-tauri/gen

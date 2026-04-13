@@ -19,6 +19,7 @@ export default defineConfig({
       'favicon',
       'commands',
       'scripting',
+      'alarms',
     ],
     host_permissions: ['<all_urls>'],
     action: {

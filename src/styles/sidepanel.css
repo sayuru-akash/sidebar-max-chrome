@@ -30,19 +30,12 @@ html, body {
   overflow: hidden;
 }
 
-#root {
-  height: 100%;
-}
-
-button {
-  font-family: inherit;
-}
-
-/* ── Root Container ── */
+#root { height: 100%; }
+button { font-family: inherit; }
 
 .sm {
-  position: relative;
-  width: 100%;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
@@ -69,73 +62,15 @@ button {
   to { transform: rotate(360deg); }
 }
 
-/* ── Iframe Viewer — always fills entire panel ── */
-
-.sm__viewer {
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  contain: layout paint;
-  z-index: 1;
-}
-
-.sm__viewer.is-hidden {
-  z-index: 0;
-}
-
-.sm__iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-  max-width: 100%;
-}
-
-.sm__viewer-loader {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: var(--sm-bg);
-  z-index: 2;
-}
-
-.sm__viewer-error {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  background: var(--sm-bg);
-  color: var(--sm-text-dim);
-  z-index: 3;
-  padding: 24px;
-}
-
-.sm__viewer-error p {
-  margin: 0;
-}
-
-.sm__viewer-error-hint {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  color: rgba(140, 161, 201, 0.6);
-}
-
-/* ── Toolbar — floats over iframe when pinned ── */
+/* ── Toolbar ── */
 
 .sm__toolbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 10;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--sm-border);
   background: rgba(17, 24, 39, 0.95);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--sm-border);
 }
 
 .sm__toolbar-row {
@@ -199,22 +134,12 @@ button {
   font-size: 0.82rem;
 }
 
-.sm__input:focus {
-  outline: none;
-}
+.sm__input:focus { outline: none; }
 
 .sm__tab-actions {
   display: flex;
   gap: 2px;
   flex-shrink: 0;
-}
-
-.sm__icon-btn--unpin {
-  color: var(--sm-accent);
-}
-
-.sm__icon-btn--unpin:hover {
-  color: #6ba0ff;
 }
 
 /* ── Tab Strip ── */
@@ -226,10 +151,7 @@ button {
   overflow-x: auto;
   scrollbar-width: none;
 }
-
-.sm__tabstrip::-webkit-scrollbar {
-  display: none;
-}
+.sm__tabstrip::-webkit-scrollbar { display: none; }
 
 .sm__chip {
   display: flex;
@@ -241,18 +163,9 @@ button {
   background: transparent;
   max-width: 160px;
 }
-
-.sm__chip.is-active {
-  background: var(--sm-accent-glow);
-}
-
-.sm__chip:hover {
-  background: var(--sm-surface-hover);
-}
-
-.sm__chip.is-active:hover {
-  background: var(--sm-accent-glow);
-}
+.sm__chip.is-active { background: var(--sm-accent-glow); }
+.sm__chip:hover { background: var(--sm-surface-hover); }
+.sm__chip.is-active:hover { background: var(--sm-accent-glow); }
 
 .sm__chip-btn {
   appearance: none;
@@ -280,7 +193,6 @@ button {
   border-radius: 4px;
   flex-shrink: 0;
 }
-
 .sm__chip-close:hover {
   background: rgba(255, 107, 107, 0.2);
   color: var(--sm-danger);
@@ -309,170 +221,64 @@ button {
   font-weight: 700;
 }
 
-/* ── Collapsed Overlay — full-width compact tab manager ── */
+/* ── Iframe Viewer ── */
 
-.sm__overlay {
+.sm__viewer {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  contain: layout paint;
+}
+
+.sm__iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  max-width: 100%;
+}
+
+.sm__viewer-loader {
   position: absolute;
   inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  background: var(--sm-bg);
-}
-
-.sm__overlay-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--sm-border);
-  flex-shrink: 0;
-}
-
-.sm__overlay-title {
-  font-size: 0.85rem;
-  font-weight: 650;
-  color: var(--sm-text);
-  letter-spacing: -0.01em;
-}
-
-.sm__overlay-pin {
-  appearance: none;
-  border: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: var(--sm-accent);
-  color: #fff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  transition: background 150ms ease;
-}
-
-.sm__overlay-pin:hover {
-  background: #6ba0ff;
-}
-
-.sm__overlay-tabs {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 0;
-}
-
-.sm__overlay-tab {
-  display: flex;
-  align-items: center;
-  padding: 2px 10px;
-  gap: 4px;
-}
-
-.sm__overlay-tab.is-active {
-  background: var(--sm-accent-glow);
-}
-
-.sm__overlay-tab:hover {
-  background: var(--sm-surface-hover);
-}
-
-.sm__overlay-tab.is-active:hover {
-  background: var(--sm-accent-glow);
-}
-
-.sm__overlay-tab-btn {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--sm-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  padding: 8px 4px;
-}
-
-.sm__overlay-tab-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.82rem;
-}
-
-.sm__overlay-tab-close {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--sm-text-dim);
-  cursor: pointer;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  flex-shrink: 0;
+  background: var(--sm-bg);
+  z-index: 1;
 }
 
-.sm__overlay-tab-close:hover {
-  background: rgba(255, 107, 107, 0.2);
-  color: var(--sm-danger);
+.sm__viewer-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background: var(--sm-bg);
+  color: var(--sm-text-dim);
+  z-index: 2;
+  padding: 24px;
 }
-
-.sm__overlay-new {
-  appearance: none;
-  border: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  margin: 6px 10px 10px;
-  border-radius: 8px;
-  background: rgba(75, 136, 255, 0.1);
-  color: var(--sm-accent);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  flex-shrink: 0;
-  transition: background 150ms ease;
-}
-
-.sm__overlay-new:hover {
-  background: rgba(75, 136, 255, 0.2);
+.sm__viewer-error p { margin: 0; }
+.sm__viewer-error-hint {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: rgba(140, 161, 201, 0.6);
 }
 
 /* ── Error Bar ── */
 
 .sm__error {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 30;
   padding: 6px 12px;
   background: rgba(255, 107, 107, 0.12);
   border-top: 1px solid rgba(255, 107, 107, 0.2);
   color: #ffc9c9;
   font-size: 0.78rem;
+  flex-shrink: 0;
 }
 
 /* ── Icons ── */
 
-.sm__icon {
-  width: 14px;
-  height: 14px;
-}
-
-.sm__icon--tiny {
-  width: 10px;
-  height: 10px;
-}
-
-.sm__icon--muted {
-  color: var(--sm-text-dim);
-}
+.sm__icon { width: 14px; height: 14px; }
+.sm__icon--tiny { width: 10px; height: 10px; }
+.sm__icon--muted { color: var(--sm-text-dim); }
