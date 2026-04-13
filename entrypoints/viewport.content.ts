@@ -30,11 +30,16 @@ export default defineContentScript({
 
     if (window.name !== 'sm-panel') return;
 
+    let lastSyncedUrl = '';
+
     function syncUrl(): void {
+      const current = window.location.href;
+      if (current === lastSyncedUrl) return;
+      lastSyncedUrl = current;
       try {
         chrome.runtime.sendMessage({
           type: 'SYNC_IFRAME_URL',
-          url: window.location.href,
+          url: current,
         }).catch(() => {});
       } catch {
         // extension context invalidated
@@ -44,6 +49,13 @@ export default defineContentScript({
     window.addEventListener('load', syncUrl);
     window.addEventListener('popstate', syncUrl);
     window.addEventListener('hashchange', syncUrl);
+    document.addEventListener('click', () => setTimeout(syncUrl, 100), true);
+
+    if ('navigation' in window) {
+      try {
+        (window as unknown as { navigation: EventTarget }).navigation.addEventListener('navigate', () => setTimeout(syncUrl, 50));
+      } catch { /* Navigation API not available */ }
+    }
 
     const origPush = history.pushState.bind(history);
     history.pushState = function (...args: Parameters<typeof history.pushState>) {
@@ -57,6 +69,6 @@ export default defineContentScript({
       setTimeout(syncUrl, 50);
     };
 
-    setInterval(syncUrl, 2000);
+    setInterval(syncUrl, 500);
   },
 });

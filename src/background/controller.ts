@@ -40,6 +40,24 @@ async function makePersistentTab(tabId: number): Promise<void> {
   }
 }
 
+async function injectMediaPlay(tabId: number): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        document.querySelectorAll('video').forEach((v) => {
+          try { void v.play(); } catch { /* autoplay blocked */ }
+        });
+        document.querySelectorAll('audio').forEach((a) => {
+          try { void a.play(); } catch { /* autoplay blocked */ }
+        });
+      },
+    });
+  } catch {
+    // tab not ready or no permission
+  }
+}
+
 export class SidePanelController {
   private readonly initPromise: Promise<void>;
   private sessions = new Map<number, SidePanelSession>();
@@ -59,6 +77,7 @@ export class SidePanelController {
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === this.keepAliveAlarm) {
         void this.persistAll();
+        void this.keepAliveMedia();
       }
     });
     void chrome.alarms.create(this.keepAliveAlarm, { periodInMinutes: 0.4 });
@@ -135,6 +154,24 @@ export class SidePanelController {
     }
   }
 
+  private async keepAliveMedia(): Promise<void> {
+    for (const session of this.sessions.values()) {
+      for (const wsTab of session.workspaceTabs) {
+        if (wsTab.nativeTabId == null) continue;
+        try {
+          const tab = await chrome.tabs.get(wsTab.nativeTabId);
+          if (tab.discarded) {
+            await chrome.tabs.reload(wsTab.nativeTabId);
+          } else {
+            await injectMediaPlay(wsTab.nativeTabId);
+          }
+        } catch {
+          // dead tab
+        }
+      }
+    }
+  }
+
   private sendToPanel(windowId: number, event: PanelEvent): void {
     chrome.runtime.sendMessage(event).catch(() => {});
   }
@@ -161,7 +198,7 @@ export class SidePanelController {
       try {
         await chrome.tabGroups.update(groupId, {
           title: TAB_GROUP_TITLE,
-          collapsed: true,
+          collapsed: false,
           color: 'blue',
         });
       } catch {
@@ -177,7 +214,7 @@ export class SidePanelController {
       try {
         await chrome.tabGroups.update(groupId, {
           title: TAB_GROUP_TITLE,
-          collapsed: true,
+          collapsed: false,
           color: 'blue',
         });
       } catch {
@@ -391,6 +428,12 @@ export class SidePanelController {
           const bgTab = await chrome.tabs.get(active.nativeTabId);
           if (bgTab.url !== newUrl) {
             await chrome.tabs.update(active.nativeTabId, { url: newUrl });
+            chrome.tabs.onUpdated.addListener(function listener(tid, info) {
+              if (tid === active.nativeTabId && info.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                void injectMediaPlay(active.nativeTabId);
+              }
+            });
           }
         } catch {
           // dead tab
