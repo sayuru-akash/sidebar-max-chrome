@@ -28,6 +28,21 @@ export default defineContentScript({
       ensureViewport();
     }
 
+    if (window.name.startsWith('sm-offscreen-')) {
+      function autoPlay(): void {
+        document.querySelectorAll('video').forEach((v) => {
+          try { void v.play(); } catch { /* autoplay blocked */ }
+        });
+        document.querySelectorAll('audio').forEach((a) => {
+          try { void a.play(); } catch { /* autoplay blocked */ }
+        });
+      }
+      autoPlay();
+      document.addEventListener('load', autoPlay);
+      setInterval(autoPlay, 3000);
+      return;
+    }
+
     if (window.name !== 'sm-panel') return;
 
     let lastSyncedUrl = '';

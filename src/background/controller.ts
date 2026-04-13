@@ -64,6 +64,7 @@ export class SidePanelController {
   private persistTimer: number | null = null;
   private snapshot: Awaited<ReturnType<typeof loadSessionSnapshot>> = null;
   private keepAliveAlarm = 'sm-keepalive';
+  private offscreenReady = false;
 
   constructor() {
     this.initPromise = this.initialize();
@@ -78,6 +79,7 @@ export class SidePanelController {
       if (alarm.name === this.keepAliveAlarm) {
         void this.persistAll();
         void this.keepAliveMedia();
+        this.syncOffscreen();
       }
     });
     void chrome.alarms.create(this.keepAliveAlarm, { periodInMinutes: 0.4 });
@@ -124,6 +126,7 @@ export class SidePanelController {
   private setSession(windowId: number, session: SidePanelSession): void {
     this.sessions.set(windowId, session);
     this.schedulePersistence();
+    this.syncOffscreen();
     this.sendToPanel(windowId, {
       type: 'SESSION_UPDATED',
       session,
@@ -174,6 +177,50 @@ export class SidePanelController {
 
   private sendToPanel(windowId: number, event: PanelEvent): void {
     chrome.runtime.sendMessage(event).catch(() => {});
+  }
+
+  private async ensureOffscreenDoc(): Promise<void> {
+    if (this.offscreenReady) return;
+    try {
+      const has = await chrome.offscreen.hasDocument();
+      if (has) {
+        this.offscreenReady = true;
+        return;
+      }
+      await chrome.offscreen.createDocument({
+        url: 'offscreen.html',
+        reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+        justification: 'Keep workspace tab media playing while side panel is closed',
+      });
+      this.offscreenReady = true;
+    } catch {
+      // offscreen doc creation failed or already exists
+      this.offscreenReady = true;
+    }
+  }
+
+  private syncOffscreen(): void {
+    void this.ensureOffscreenDoc().then(() => {
+      const allTabs: { id: string; url: string }[] = [];
+      for (const session of this.sessions.values()) {
+        for (const tab of session.workspaceTabs) {
+          allTabs.push({ id: tab.id, url: tab.url });
+        }
+      }
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        type: 'OFFSCREEN_SYNC',
+        tabs: allTabs,
+      }).catch(() => { this.offscreenReady = false; });
+    });
+  }
+
+  private closeOffscreenTab(tabId: string): void {
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'OFFSCREEN_CLOSE',
+      tabId,
+    }).catch(() => {});
   }
 
   private async syncTabGroup(session: SidePanelSession): Promise<SidePanelSession> {
@@ -540,6 +587,7 @@ export class SidePanelController {
 
     await this.persistSnapshot(session);
     this.sessions.delete(windowId);
+    this.syncOffscreen();
     await removeWindowSession(windowId);
   }
 }

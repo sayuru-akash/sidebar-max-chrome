@@ -20,6 +20,7 @@ export default defineConfig({
       'commands',
       'scripting',
       'alarms',
+      'offscreen',
     ],
     host_permissions: ['<all_urls>'],
     action: {
